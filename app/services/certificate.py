@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import os
+import re
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from PIL import Image, ImageDraw, ImageFont
 import qrcode
@@ -19,7 +23,17 @@ DEFAULT_TEMPLATE_NAMES = ("template_geoprocessamento.png",)
 FONT_PATH = STATIC_DIR / "fonts" / "DejaVuSans.ttf"
 FONT_BOLD_PATH = STATIC_DIR / "fonts" / "DejaVuSans-Bold.ttf"
 
-LINE_SPACING_BODY = 1.5
+LINE_SPACING_BODY = 2.0
+
+# Horário de Fortaleza (Ceará); IANA America/Fortaleza — mesmo fuso que Brasília.
+CERT_TIMEZONE = ZoneInfo("America/Fortaleza")
+
+# Página pública de validação (texto no certificado abaixo do código). Sobrescreva com PUBLIC_VALIDAR_URL.
+_DEFAULT_PUBLIC_VALIDAR = "https://meu-certificado.up.railway.app/validar"
+
+
+def public_validar_page_url() -> str:
+    return (os.getenv("PUBLIC_VALIDAR_URL") or _DEFAULT_PUBLIC_VALIDAR).strip() or _DEFAULT_PUBLIC_VALIDAR
 
 
 def resolve_template_file(basename: str | None) -> Path:
@@ -81,6 +95,29 @@ def _space_width(draw: ImageDraw.ImageDraw, font_r: ImageFont.ImageFont) -> int:
     return max(1, bbox[2] - bbox[0])
 
 
+def _no_space_before_token(word: str) -> bool:
+    """Vírgula/ponto/etc. como token separado: sem espaço entre a palavra anterior e a pontuação."""
+    if not word:
+        return True
+    w = word.strip()
+    if not w:
+        return True
+    if len(w) == 1 and w in ",.;:!?…":
+        return True
+    return False
+
+
+def _inter_word_space_slots(line_tokens: list[tuple[str, bool]]) -> int:
+    n = len(line_tokens)
+    if n < 2:
+        return 0
+    return sum(
+        1
+        for i in range(n - 1)
+        if not _no_space_before_token(line_tokens[i + 1][0])
+    )
+
+
 def _line_width(
     line_tokens: list[tuple[str, bool]],
     draw: ImageDraw.ImageDraw,
@@ -91,7 +128,7 @@ def _line_width(
         return 0.0
     sw = _space_width(draw, font_r)
     total = sum(_word_width(draw, w, b, font_r, font_b) for w, b in line_tokens)
-    total += sw * (len(line_tokens) - 1)
+    total += sw * _inter_word_space_slots(line_tokens)
     return float(total)
 
 
@@ -107,7 +144,7 @@ def build_body_word_tokens(p: dict[str, str]) -> list[tuple[str, bool]]:
         ("Certificamos que ", False),
         (nome, True),
         (" participou do evento ", False),
-        (evento, False),
+        (evento, True),
         (", realizado em ", False),
         (local, False),
         (" no dia ", False),
@@ -166,6 +203,25 @@ def _body_line_step(
     return max(1, int(h * line_spacing))
 
 
+def _municipio_from_local(local: str) -> str:
+    """Município = texto antes da primeira vírgula (ex.: 'Quixeramobim, na FATEC...' → Quixeramobim)."""
+    s = " ".join((local or "").replace("\n", " ").split()).strip()
+    if not s:
+        return ""
+    before_comma = s.split(",", maxsplit=1)[0].strip()
+    before_comma = re.sub(r"\s*[-–/]\s*[A-Z]{2}\s*$", "", before_comma, flags=re.I).strip()
+    return before_comma
+
+
+def _format_generation_stamp(participant: dict[str, str] | None) -> str:
+    dt = datetime.now(CERT_TIMEZONE)
+    ts = dt.strftime("%d/%m/%Y às %H:%M:%S")
+    mun = _municipio_from_local((participant or {}).get("local") or "")
+    if mun:
+        return f"Certificado gerado em {ts} — {mun} (fuso horário Fortaleza/CE)"
+    return f"Certificado gerado em {ts} — Fortaleza/CE"
+
+
 def _font_line_height(draw: ImageDraw.ImageDraw, font: ImageFont.ImageFont) -> int:
     b = draw.textbbox((0, 0), "Ág", font=font)
     return max(1, b[3] - b[1])
@@ -187,10 +243,11 @@ def _draw_justified_line(
         return
     space_w = _space_width(draw, font_r)
     widths = [_word_width(draw, w, b, font_r, font_b) for w, b in line_tokens]
-    content = sum(widths) + (n - 1) * space_w
+    slots = _inter_word_space_slots(line_tokens)
+    content = sum(widths) + slots * space_w
     extra = max_width - content
-    if justify and n > 1 and extra > 0:
-        gap_extra = extra / (n - 1)
+    if justify and slots > 0 and extra > 0:
+        gap_extra = extra / slots
     else:
         gap_extra = 0.0
 
@@ -199,7 +256,7 @@ def _draw_justified_line(
         font = font_b if bold else font_r
         draw.text((x, y), word, font=font, fill=fill, anchor="ls")
         x += tw
-        if i < n - 1:
+        if i < n - 1 and not _no_space_before_token(line_tokens[i + 1][0]):
             x += space_w + gap_extra
 
 
@@ -262,7 +319,7 @@ def render_certificate_png(
     tokens = build_body_word_tokens(participant)
 
     name_size = max(28, int(h * 0.038))
-    body_size = max(21, int(h * 0.023))
+    body_size = max(24, int(h * 0.027))
     code_size = max(13, int(h * 0.017))
     font_name = _resolve_font(name_size, bold=True)
     font_body = _resolve_font(body_size, bold=False)
@@ -274,29 +331,54 @@ def render_certificate_png(
     max_text_w = w - 2 * margin_x
 
     line_step_body = _body_line_step(draw, font_body, font_body_bold, LINE_SPACING_BODY)
+    # Subir todo o bloco de texto (nome, corpo, rodapé, QR) duas linhas do corpo
+    offset_up = 2 * line_step_body
 
-    name_y = int(h * 0.36)
+    name_y = int(h * 0.36) - offset_up + line_step_body
     draw.text((w / 2, name_y), nome, fill=fill, font=font_name, anchor="mm")
 
     # Duas linhas (entrelinha do corpo) entre o nome e o texto justificado
-    start_body_y = float(int(h * 0.42)) + 2 * line_step_body
+    start_body_y = float(int(h * 0.42)) + 2 * line_step_body - offset_up
     _draw_body_paragraph(draw, tokens, margin_x, max_text_w, start_body_y, font_body, font_body_bold, fill)
 
     codigo = (codigo_verificacao or "").strip()
+    code_y: float | None = None
     if codigo:
         label = f"Código de verificação: {codigo}"
-        # Sobe uma linha (altura da fonte do código)
-        code_y = int(h * 0.82) - _font_line_height(draw, font_code)
+        # Sobe uma linha (altura da fonte do código) + bloco global
+        code_y = float(int(h * 0.82) - _font_line_height(draw, font_code) - offset_up)
         draw.text((w / 2, code_y), label, fill=fill, font=font_code, anchor="mm")
+
+        url_txt = public_validar_page_url()
+        url_size = max(11, int(h * 0.013))
+        font_url = _resolve_font(url_size, bold=False)
+        gap = int(h * 0.012)
+        link_y = code_y + _font_line_height(draw, font_code) + gap
+        draw.text((w / 2, link_y), url_txt, fill=fill, font=font_url, anchor="mm")
 
     if verification_url:
         qr_size = max(96, int(h * 0.15))
         qr_img = _build_qr_image(verification_url, qr_size)
         qr_x = int(w * 0.79)
-        qr_y = int(h * 0.61)
+        if code_y is not None:
+            qr_y = int(round(code_y - qr_size / 2))
+        else:
+            qr_y = int(h * 0.61) - offset_up
         img.paste(qr_img, (qr_x, qr_y))
         legend = "Validar QR"
         draw.text((qr_x + qr_size / 2, qr_y + qr_size + int(h * 0.014)), legend, fill=fill, font=font_code, anchor="mm")
+
+    stamp_text = _format_generation_stamp(participant)
+    stamp_size = max(11, int(h * 0.012))
+    font_stamp = _resolve_font(stamp_size, bold=False)
+    pad_bottom = int(h * 0.018)
+    draw.text(
+        (margin_x, h - pad_bottom),
+        stamp_text,
+        fill=(72, 72, 72),
+        font=font_stamp,
+        anchor="lb",
+    )
 
     buf = BytesIO()
     img.save(buf, format="PNG", optimize=True)
