@@ -5,8 +5,9 @@ from __future__ import annotations
 import re
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import quote
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -44,6 +45,11 @@ def _slug_filename(s: str, max_len: int = 80) -> str:
     s = re.sub(r"[^a-z0-9._-]+", "_", s, flags=re.IGNORECASE)
     s = s.strip("_") or "certificado"
     return s[:max_len]
+
+
+def _build_verification_url(request: Request, codigo: str) -> str:
+    base = str(request.base_url).rstrip("/")
+    return f"{base}/validar?codigo={quote(codigo)}"
 
 
 @app.get("/")
@@ -127,6 +133,7 @@ def api_validar(codigo: str = Query(..., min_length=8, description="Código impr
 
 @app.get("/api/certificado.png")
 def api_certificado_png(
+    request: Request,
     email: str = Query(..., min_length=3),
     evento: str = Query(..., min_length=1),
 ):
@@ -138,7 +145,8 @@ def api_certificado_png(
         )
     try:
         codigo = obter_ou_criar_codigo(p)
-        png = render_certificate_png(p, codigo)
+        verification_url = _build_verification_url(request, codigo)
+        png = render_certificate_png(p, codigo, verification_url=verification_url)
     except FileNotFoundError as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
     except ValueError as e:
@@ -154,6 +162,7 @@ def api_certificado_png(
 
 @app.get("/api/certificado.pdf")
 def api_certificado_pdf(
+    request: Request,
     email: str = Query(..., min_length=3),
     evento: str = Query(..., min_length=1),
 ):
@@ -165,7 +174,8 @@ def api_certificado_pdf(
         )
     try:
         codigo = obter_ou_criar_codigo(p)
-        pdf = render_certificate_pdf(p, codigo)
+        verification_url = _build_verification_url(request, codigo)
+        pdf = render_certificate_pdf(p, codigo, verification_url=verification_url)
     except FileNotFoundError as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
     except ValueError as e:

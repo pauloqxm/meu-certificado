@@ -3,3 +3,4 @@ uvicorn[standard]>=0.27.0
 httpx>=0.26.0
 pillow>=10.2.0
 reportlab>=4.0.0
+qrcode>=7.4.2

@@ -6,6 +6,7 @@ from io import BytesIO
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
+import qrcode
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
@@ -233,7 +234,24 @@ def _draw_body_paragraph(
         y += line_step
 
 
-def render_certificate_png(participant: dict[str, str], codigo_verificacao: str) -> bytes:
+def _build_qr_image(data: str, target_size_px: int) -> Image.Image:
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=8,
+        border=1,
+    )
+    qr.add_data(data)
+    qr.make(fit=True)
+    img_qr = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+    return img_qr.resize((target_size_px, target_size_px), Image.Resampling.NEAREST)
+
+
+def render_certificate_png(
+    participant: dict[str, str],
+    codigo_verificacao: str,
+    verification_url: str | None = None,
+) -> bytes:
     path = resolve_template_file(participant.get("template") or None)
 
     img = Image.open(path).convert("RGB")
@@ -271,6 +289,15 @@ def render_certificate_png(participant: dict[str, str], codigo_verificacao: str)
         code_y = int(h * 0.82) - _font_line_height(draw, font_code)
         draw.text((w / 2, code_y), label, fill=fill, font=font_code, anchor="mm")
 
+    if verification_url:
+        qr_size = max(96, int(h * 0.15))
+        qr_img = _build_qr_image(verification_url, qr_size)
+        qr_x = int(w * 0.79)
+        qr_y = int(h * 0.61)
+        img.paste(qr_img, (qr_x, qr_y))
+        legend = "Validar QR"
+        draw.text((qr_x + qr_size / 2, qr_y + qr_size + int(h * 0.014)), legend, fill=fill, font=font_code, anchor="mm")
+
     buf = BytesIO()
     img.save(buf, format="PNG", optimize=True)
     return buf.getvalue()
@@ -289,6 +316,10 @@ def png_bytes_to_pdf(png_bytes: bytes) -> bytes:
     return out.getvalue()
 
 
-def render_certificate_pdf(participant: dict[str, str], codigo_verificacao: str) -> bytes:
-    png = render_certificate_png(participant, codigo_verificacao)
+def render_certificate_pdf(
+    participant: dict[str, str],
+    codigo_verificacao: str,
+    verification_url: str | None = None,
+) -> bytes:
+    png = render_certificate_png(participant, codigo_verificacao, verification_url=verification_url)
     return png_bytes_to_pdf(png)

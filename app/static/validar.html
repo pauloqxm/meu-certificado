@@ -115,6 +115,13 @@
         input.addEventListener("keydown", function (ev) {
           if (ev.key === "Enter") buscar();
         });
+
+        var params = new URLSearchParams(window.location.search);
+        var codigoParam = (params.get("codigo") || "").trim();
+        if (codigoParam) {
+          input.value = codigoParam;
+          buscar();
+        }
       })();
     </script>
   </body>
