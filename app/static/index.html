@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Certificado — emissão</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <h1>Emissão de certificado</h1>
+        <p>
+          Escolha o evento, confira data e local, depois informe o e-mail cadastrado na planilha para gerar a
+          pré-visualização e o PDF.
+        </p>
+      </header>
+
+      <div class="card">
+        <section class="step" id="stepEvent">
+          <h2 class="step-title">1. Evento</h2>
+          <label for="evento">Evento</label>
+          <select id="evento" name="evento">
+            <option value="">Carregando eventos…</option>
+          </select>
+          <p class="hint" id="eventoHint"></p>
+
+          <div class="event-details hidden" id="eventDetails">
+            <div class="field-row">
+              <div>
+                <label for="dataEvt">Data</label>
+                <input type="text" id="dataEvt" readonly tabindex="-1" />
+              </div>
+              <div>
+                <label for="localEvt">Local</label>
+                <input type="text" id="localEvt" readonly tabindex="-1" />
+              </div>
+            </div>
+            <p class="template-name" id="templateName"></p>
+          </div>
+        </section>
+
+        <section class="step hidden" id="stepEmail">
+          <h2 class="step-title">2. E-mail</h2>
+          <label for="email">E-mail (cadastrado na planilha)</label>
+          <input
+            type="email"
+            id="email"
+            name="email"
+            autocomplete="email"
+            placeholder="ex.: nome.sobrenome@org.com.br"
+            spellcheck="false"
+            disabled
+          />
+        </section>
+
+        <div class="meta" id="meta" aria-live="polite"></div>
+
+        <div class="preview">
+          <h2>Pré-visualização</h2>
+          <div class="preview-frame" id="frame">
+            <div class="placeholder" id="ph">Selecione um evento para carregar o modelo do certificado.</div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button type="button" class="primary" id="btnPdf" disabled>Baixar PDF</button>
+          <button type="button" class="ghost" id="btnClear">Limpar</button>
+        </div>
+      </div>
+
+      <footer>
+        Dados obtidos da planilha publicada no Google Sheets. Em caso de divergência, contate a organização do
+        evento.
+        <br />
+        <a href="/validar">Validar certificado pelo código</a>
+      </footer>
+    </div>
+
+    <script>
+      (function () {
+        const eventoSelect = document.getElementById("evento");
+        const eventoHint = document.getElementById("eventoHint");
+        const eventDetails = document.getElementById("eventDetails");
+        const dataEvt = document.getElementById("dataEvt");
+        const localEvt = document.getElementById("localEvt");
+        const templateName = document.getElementById("templateName");
+        const stepEmail = document.getElementById("stepEmail");
+        const emailInput = document.getElementById("email");
+        const meta = document.getElementById("meta");
+        const frame = document.getElementById("frame");
+        const btnPdf = document.getElementById("btnPdf");
+        const btnClear = document.getElementById("btnClear");
+
+        let debounceTimer = null;
+        let lastOkEmail = "";
+        let lastObjectUrl = null;
+        let templateObjectUrl = null;
+        /** @type {{ evento: string, data: string, local: string, template: string }[]} */
+        let eventosList = [];
+
+        function setMeta(msg, kind) {
+          meta.textContent = msg || "";
+          meta.className = "meta" + (kind ? " " + kind : "");
+        }
+
+        function showPlaceholder(text) {
+          frame.innerHTML = "";
+          const div = document.createElement("div");
+          div.className = "placeholder";
+          div.id = "ph";
+          div.textContent = text;
+          frame.appendChild(div);
+        }
+
+        function showPreview(url) {
+          frame.innerHTML = "";
+          const img = document.createElement("img");
+          img.alt = "Pré-visualização do certificado";
+          img.src = url;
+          frame.appendChild(img);
+        }
+
+        function revokeTemplateUrl() {
+          if (templateObjectUrl) {
+            URL.revokeObjectURL(templateObjectUrl);
+            templateObjectUrl = null;
+          }
+        }
+
+        function revokePreviewUrl() {
+          if (lastObjectUrl) {
+            URL.revokeObjectURL(lastObjectUrl);
+            lastObjectUrl = null;
+          }
+        }
+
+        function selectedEvento() {
+          const v = eventoSelect.value;
+          return v ? v : "";
+        }
+
+        async function loadEventos() {
+          eventoSelect.innerHTML = '<option value="">Carregando…</option>';
+          eventoSelect.disabled = true;
+          try {
+            const res = await fetch("/api/eventos");
+            if (!res.ok) {
+              const err = await res.json().catch(function () {
+                return {};
+              });
+              throw new Error(err.detail || "Erro ao listar eventos.");
+            }
+            eventosList = await res.json();
+            eventoSelect.innerHTML = '<option value="">Selecione um evento…</option>';
+            eventosList.forEach(function (ev) {
+              const opt = document.createElement("option");
+              opt.value = ev.evento;
+              opt.textContent = ev.evento.length > 90 ? ev.evento.slice(0, 87) + "…" : ev.evento;
+              opt.title = ev.evento;
+              eventoSelect.appendChild(opt);
+            });
+            eventoHint.textContent =
+              eventosList.length === 0 ? "Nenhum evento encontrado na planilha." : "";
+          } catch (e) {
+            eventoSelect.innerHTML = '<option value="">Erro ao carregar</option>';
+            eventoHint.textContent = e.message || "Falha ao carregar eventos.";
+            setMeta(eventoHint.textContent, "error");
+          } finally {
+            eventoSelect.disabled = false;
+          }
+        }
+
+        async function onEventoChange() {
+          setMeta("");
+          emailInput.value = "";
+          emailInput.disabled = true;
+          stepEmail.classList.add("hidden");
+          btnPdf.disabled = true;
+          lastOkEmail = "";
+          revokePreviewUrl();
+          eventDetails.classList.add("hidden");
+          templateName.textContent = "";
+
+          const evName = selectedEvento();
+          if (!evName) {
+            showPlaceholder("Selecione um evento para carregar o modelo do certificado.");
+            revokeTemplateUrl();
+            return;
+          }
+
+          const found = eventosList.find(function (x) {
+            return x.evento === evName;
+          });
+          if (found) {
+            dataEvt.value = found.data || "—";
+            localEvt.value = found.local || "—";
+            templateName.textContent = found.template
+              ? "Modelo: " + found.template
+              : "Modelo: (padrão da aplicação)";
+            eventDetails.classList.remove("hidden");
+          }
+
+          stepEmail.classList.remove("hidden");
+          emailInput.disabled = false;
+          emailInput.placeholder = "Informe o e-mail cadastrado para este evento";
+          emailInput.focus();
+
+          try {
+            const q = encodeURIComponent(evName);
+            const res = await fetch("/api/template.png?evento=" + q);
+            if (!res.ok) {
+              const err = await res.json().catch(function () {
+                return {};
+              });
+              setMeta(err.detail || "Não foi possível carregar o modelo do certificado.", "error");
+              showPlaceholder("Erro ao carregar o template. Verifique a coluna Template na planilha.");
+              return;
+            }
+            const blob = await res.blob();
+            revokeTemplateUrl();
+            templateObjectUrl = URL.createObjectURL(blob);
+            showPreview(templateObjectUrl);
+            setMeta("Modelo carregado. Informe o e-mail para ver o certificado preenchido.", "ok");
+          } catch (e) {
+            setMeta("Erro ao carregar o template.", "error");
+            showPlaceholder("Erro de rede ao carregar o template.");
+          }
+        }
+
+        async function loadPreview(email) {
+          const evName = selectedEvento();
+          if (!evName) return;
+
+          const qe = encodeURIComponent(evName);
+          const qm = encodeURIComponent(email);
+          setMeta("Carregando certificado…", "");
+          btnPdf.disabled = true;
+          lastOkEmail = "";
+          revokePreviewUrl();
+
+          const res = await fetch("/api/certificado.png?evento=" + qe + "&email=" + qm);
+          if (res.status === 404) {
+            setMeta("Nenhum participante com este e-mail neste evento.", "error");
+            const q = encodeURIComponent(evName);
+            const tr = await fetch("/api/template.png?evento=" + q);
+            if (tr.ok) {
+              const blob = await tr.blob();
+              revokeTemplateUrl();
+              templateObjectUrl = URL.createObjectURL(blob);
+              showPreview(templateObjectUrl);
+            } else {
+              showPlaceholder("Verifique o e-mail ou o evento selecionado.");
+            }
+            return;
+          }
+          if (!res.ok) {
+            const err = await res.json().catch(function () {
+              return {};
+            });
+            setMeta(err.detail || "Erro ao gerar o certificado.", "error");
+            return;
+          }
+
+          const codigoHdr = res.headers.get("X-Certificado-Codigo") || "";
+          const blob = await res.blob();
+          lastObjectUrl = URL.createObjectURL(blob);
+          showPreview(lastObjectUrl);
+          setMeta(
+            codigoHdr
+              ? "Certificado gerado. Código: " + codigoHdr + " (use a página Validar certificado para conferir). Pode baixar o PDF."
+              : "Certificado gerado. Você pode baixar o PDF.",
+            "ok"
+          );
+          btnPdf.disabled = false;
+          lastOkEmail = email;
+        }
+
+        function reloadTemplatePreview() {
+          const evName = selectedEvento();
+          if (!evName) return;
+          const q = encodeURIComponent(evName);
+          fetch("/api/template.png?evento=" + q)
+            .then(function (res) {
+              if (!res.ok) return null;
+              return res.blob();
+            })
+            .then(function (blob) {
+              if (!blob) return;
+              revokeTemplateUrl();
+              templateObjectUrl = URL.createObjectURL(blob);
+              showPreview(templateObjectUrl);
+            });
+        }
+
+        function onEmailInput() {
+          const raw = emailInput.value.trim();
+          if (debounceTimer) clearTimeout(debounceTimer);
+
+          if (!selectedEvento()) {
+            return;
+          }
+
+          if (!raw) {
+            setMeta("Informe o e-mail para gerar o certificado preenchido.", "");
+            btnPdf.disabled = true;
+            lastOkEmail = "";
+            revokePreviewUrl();
+            reloadTemplatePreview();
+            return;
+          }
+
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
+            setMeta("Digite um e-mail válido.", "error");
+            btnPdf.disabled = true;
+            lastOkEmail = "";
+            return;
+          }
+
+          debounceTimer = setTimeout(function () {
+            loadPreview(raw);
+          }, 450);
+        }
+
+        eventoSelect.addEventListener("change", function () {
+          onEventoChange();
+        });
+
+        emailInput.addEventListener("input", onEmailInput);
+        emailInput.addEventListener("paste", function () {
+          setTimeout(onEmailInput, 0);
+        });
+
+        btnPdf.addEventListener("click", function () {
+          if (!lastOkEmail || !selectedEvento()) return;
+          const qe = encodeURIComponent(selectedEvento());
+          const qm = encodeURIComponent(lastOkEmail);
+          window.location.href = "/api/certificado.pdf?evento=" + qe + "&email=" + qm;
+        });
+
+        btnClear.addEventListener("click", function () {
+          eventoSelect.value = "";
+          emailInput.value = "";
+          emailInput.disabled = true;
+          emailInput.placeholder = "ex.: nome.sobrenome@org.com.br";
+          stepEmail.classList.add("hidden");
+          setMeta("");
+          showPlaceholder("Selecione um evento para carregar o modelo do certificado.");
+          btnPdf.disabled = true;
+          lastOkEmail = "";
+          revokePreviewUrl();
+          revokeTemplateUrl();
+          eventDetails.classList.add("hidden");
+          templateName.textContent = "";
+          eventoSelect.focus();
+        });
+
+        loadEventos();
+      })();
+    </script>
+  </body>
+</html>

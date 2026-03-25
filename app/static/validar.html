@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Validar certificado</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <h1>Validar certificado</h1>
+        <p>
+          Informe o código impresso no certificado (12 caracteres, no formato
+          <strong>XXXX-XXXX-XXXX</strong>).
+        </p>
+      </header>
+
+      <div class="card">
+        <label for="codigo">Código de verificação</label>
+        <input
+          type="text"
+          id="codigo"
+          name="codigo"
+          autocomplete="off"
+          placeholder="ex.: ABCD-EFGH-JKLM"
+          spellcheck="false"
+          maxlength="32"
+        />
+        <p class="hint" id="hint"></p>
+
+        <div class="meta" id="meta" aria-live="polite"></div>
+
+        <div class="validar-result hidden" id="resultOk">
+          <h2 class="step-title">Registo encontrado</h2>
+          <ul class="detail-list" id="detailList"></ul>
+        </div>
+
+        <div class="actions">
+          <button type="button" class="primary" id="btnBuscar">Consultar</button>
+          <a href="/" class="link-home">Voltar à emissão</a>
+        </div>
+      </div>
+
+      <footer>
+        Os dados são consultados na base local do emissor. Para auditoria, o ficheiro SQLite em
+        <code>data/certificados.db</code> pode ser aberto em ferramentas como
+        <a href="https://sqliteonline.com/" target="_blank" rel="noopener noreferrer">sqliteonline.com</a>.
+      </footer>
+    </div>
+
+    <script>
+      (function () {
+        var input = document.getElementById("codigo");
+        var meta = document.getElementById("meta");
+        var hint = document.getElementById("hint");
+        var resultOk = document.getElementById("resultOk");
+        var detailList = document.getElementById("detailList");
+        var btn = document.getElementById("btnBuscar");
+
+        function setMeta(msg, kind) {
+          meta.textContent = msg || "";
+          meta.className = "meta" + (kind ? " " + kind : "");
+        }
+
+        function showResult(data) {
+          resultOk.classList.remove("hidden");
+          detailList.innerHTML = "";
+          var rows = [
+            ["Código", data.codigo],
+            ["Nome", data.nome],
+            ["E-mail", data.email],
+            ["Evento", data.evento],
+            ["Data do evento", data.data_evento],
+            ["Local", data.local],
+            ["Carga horária", data.carga_horaria],
+            ["Última emissão registrada (UTC)", data.emitido_em],
+          ];
+          rows.forEach(function (r) {
+            if (!r[1]) return;
+            var li = document.createElement("li");
+            li.innerHTML = "<strong>" + r[0] + ":</strong> " + r[1];
+            detailList.appendChild(li);
+          });
+        }
+
+        async function buscar() {
+          hint.textContent = "";
+          resultOk.classList.add("hidden");
+          var c = input.value.trim();
+          if (c.length < 8) {
+            setMeta("Digite o código completo.", "error");
+            return;
+          }
+          setMeta("Consultando…", "");
+          btn.disabled = true;
+          try {
+            var q = encodeURIComponent(c);
+            var res = await fetch("/api/validar?codigo=" + q);
+            var data = await res.json();
+            if (!data.valido) {
+              setMeta(data.mensagem || "Código inválido.", "error");
+              return;
+            }
+            setMeta("Certificado encontrado na base de registos.", "ok");
+            showResult(data);
+          } catch (e) {
+            setMeta("Erro ao consultar. Tente novamente.", "error");
+          } finally {
+            btn.disabled = false;
+          }
+        }
+
+        btn.addEventListener("click", buscar);
+        input.addEventListener("keydown", function (ev) {
+          if (ev.key === "Enter") buscar();
+        });
+      })();
+    </script>
+  </body>
+</html>
