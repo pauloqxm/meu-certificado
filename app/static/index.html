@@ -11,7 +11,7 @@
       <header>
         <h1>Emissão de certificado</h1>
         <p>
-          Escolha o evento, confira data e local, depois informe o e-mail e o telefone cadastrados na planilha para
+          Escolha o evento, confira data e local, depois informe o e-mail e o telefone cadastrados na inscrição para
           gerar a pré-visualização e o PDF.
         </p>
       </header>
@@ -42,7 +42,7 @@
 
         <section class="step hidden" id="stepEmail">
           <h2 class="step-title">2. E-mail e Telefone</h2>
-          <label for="email">E-mail (cadastrado na planilha)</label>
+          <label for="email">E-mail (cadastrado na inscrição)</label>
           <input
             type="email"
             id="email"
@@ -53,7 +53,7 @@
             disabled
           />
 
-          <label for="telefone" style="margin-top: 1rem">Telefone (cadastrado na planilha)</label>
+          <label for="telefone" style="margin-top: 1rem">Telefone (cadastrado na inscrição)</label>
           <input
             type="tel"
             id="telefone"
@@ -82,8 +82,7 @@
       </div>
 
       <footer>
-        Dados obtidos da planilha publicada no Google Sheets. Em caso de divergência, contate a organização do
-        evento.
+        Em caso de divergência, contate a organização do evento.
         <br />
         <a href="/validar">Validar certificado pelo código</a>
         ·
@@ -222,9 +221,9 @@
 
           stepEmail.classList.remove("hidden");
           emailInput.disabled = false;
-          emailInput.placeholder = "Informe o e-mail cadastrado para este evento";
+          emailInput.placeholder = "Informe o e-mail da inscrição neste evento";
           phoneInput.disabled = false;
-          phoneInput.placeholder = "Informe o telefone cadastrado para este evento";
+          phoneInput.placeholder = "Informe o telefone da inscrição neste evento";
           emailInput.focus();
 
           try {
@@ -242,7 +241,7 @@
             revokeTemplateUrl();
             templateObjectUrl = URL.createObjectURL(blob);
             showPreview(templateObjectUrl);
-            setMeta("Modelo carregado. Informe o e-mail para ver o certificado preenchido.", "ok");
+            setMeta("Modelo carregado. Informe o e-mail e o telefone da inscrição para ver o certificado preenchido.", "ok");
           } catch (e) {
             setMeta("Erro ao carregar o template.", "error");
             showPlaceholder("Erro de rede ao carregar o template.");
@@ -329,11 +328,11 @@
 
           const telefoneDigits = (telefoneRaw || "").replace(/\D/g, "");
           const emailOk = !!emailRaw && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw);
-          /* Só tenta gerar com telefone “completo” (evita pedidos com número pela metade). O servidor exige igualdade exata aos dígitos da planilha. */
+          /* Só tenta gerar com telefone “completo” (evita pedidos com número pela metade). O servidor exige igualdade exata aos dígitos registados na inscrição. */
           const telefoneOk = telefoneDigits.length >= 8 && telefoneDigits.length <= 15;
 
           if (!emailRaw && !telefoneRaw) {
-            setMeta("Informe o e-mail e o telefone para gerar o certificado.", "");
+            setMeta("Informe o e-mail e o telefone da inscrição para gerar o certificado.", "");
             btnPdf.disabled = true;
             lastOkEmail = "";
             lastOkTelefone = "";
@@ -342,7 +341,7 @@
           }
 
           if (!emailRaw) {
-            setMeta("Informe o e-mail para gerar o certificado preenchido.", "");
+            setMeta("Informe o e-mail da inscrição para gerar o certificado preenchido.", "");
             btnPdf.disabled = true;
             lastOkEmail = "";
             lastOkTelefone = "";
@@ -352,7 +351,7 @@
           }
 
           if (!telefoneRaw) {
-            setMeta("Informe o telefone para gerar o certificado preenchido.", "");
+            setMeta("Informe o telefone da inscrição para gerar o certificado preenchido.", "");
             btnPdf.disabled = true;
             lastOkEmail = "";
             lastOkTelefone = "";
@@ -371,7 +370,7 @@
 
           if (!telefoneOk) {
             setMeta(
-              "Digite o telefone completo (todos os dígitos), como na planilha — em geral 10 ou 11 com DDD.",
+              "Digite o telefone completo (todos os dígitos), como na inscrição — em geral 10 ou 11 com DDD.",
               "error"
             );
             btnPdf.disabled = true;
