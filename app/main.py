@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
@@ -11,13 +12,21 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.services.certificate import render_certificate_pdf, render_certificate_png, resolve_template_file
-from app.services.registro import buscar_por_codigo, obter_ou_criar_codigo
+from app.services.registro import buscar_por_codigo, init_db, obter_ou_criar_codigo
 from app.services.sheets import find_event_meta, find_participant_by_email, list_eventos
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 
-app = FastAPI(title="Certificados COGERH", version="1.0.0")
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    """Garante que a tabela SQLite existe ao arrancar (ficheiro em data/certificados.db)."""
+    init_db()
+    yield
+
+
+app = FastAPI(title="Certificados COGERH", version="1.0.0", lifespan=_lifespan)
 
 app.add_middleware(
     CORSMiddleware,
