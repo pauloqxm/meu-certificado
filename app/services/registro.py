@@ -88,6 +88,36 @@ def _gerar_codigo() -> str:
     return f"{raw[0:4]}-{raw[4:8]}-{raw[8:12]}"
 
 
+def mensagem_se_telefone_nao_confere_bd(email: str, evento: str, telefone_digitado: str) -> str | None:
+    """
+    Se já existe registo na BD para (e-mail, evento), o telefone digitado tem de ser
+    idêntico (só dígitos) ao `telefone_norm` guardado — evita reemitir com outro número.
+    Registos antigos com `telefone_norm` vazio não bloqueiam (preenche na próxima emissão).
+    """
+    init_db()
+    email_norm = normalize_email(email)
+    evento_norm = normalize_evento(evento)
+    tel_pedido = normalize_telefone(telefone_digitado)
+    if not email_norm or not evento_norm or not tel_pedido:
+        return None
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            "SELECT telefone_norm FROM certificado_registro WHERE email_norm = ? AND evento_norm = ?",
+            (email_norm, evento_norm),
+        ).fetchone()
+        if not row:
+            return None
+        db_tel = (row[0] or "").strip()
+        if not db_tel:
+            return None
+        if tel_pedido != db_tel:
+            return (
+                "Este e-mail já emitiu certificado neste evento. "
+                "O telefone tem de ser exatamente o mesmo registado na base de dados na primeira emissão."
+            )
+    return None
+
+
 def normalizar_codigo_digitado(s: str) -> str | None:
     """Aceita com ou sem hífens / espaços; devolve forma CANÓNICA ou None."""
     raw = re.sub(r"[^A-Za-z0-9]", "", (s or "").upper())
@@ -121,11 +151,16 @@ def obter_ou_criar_codigo(participant: dict[str, str]) -> str:
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
-            "SELECT codigo FROM certificado_registro WHERE email_norm = ? AND evento_norm = ?",
+            "SELECT codigo, telefone_norm FROM certificado_registro WHERE email_norm = ? AND evento_norm = ?",
             (email_norm, evento_norm),
         ).fetchone()
         if row:
             codigo = row["codigo"]
+            db_tel = (row["telefone_norm"] or "").strip()
+            if db_tel and telefone_norm != db_tel:
+                raise ValueError(
+                    "O telefone não coincide com o registo já existente para este e-mail e evento."
+                )
             conn.execute(
                 """UPDATE certificado_registro SET emitido_em = ?, nome = ?, email = ?, evento = ?,
                    data_evento = ?, local = ?, telefone_norm = ?, telefone = ?, carga_horaria = ? WHERE codigo = ?""",
@@ -174,11 +209,16 @@ def obter_ou_criar_codigo(participant: dict[str, str]) -> str:
                 conn.rollback()
                 # colisão rara em `codigo`; tenta outro. Se for UNIQUE(email_norm, evento_norm), relê.
                 row2 = conn.execute(
-                    "SELECT codigo FROM certificado_registro WHERE email_norm = ? AND evento_norm = ?",
+                    "SELECT codigo, telefone_norm FROM certificado_registro WHERE email_norm = ? AND evento_norm = ?",
                     (email_norm, evento_norm),
                 ).fetchone()
                 if row2:
                     codigo_ex = row2["codigo"]
+                    db_tel2 = (row2["telefone_norm"] or "").strip()
+                    if db_tel2 and telefone_norm != db_tel2:
+                        raise ValueError(
+                            "O telefone não coincide com o registo já existente para este e-mail e evento."
+                        )
                     conn.execute(
                         """UPDATE certificado_registro SET emitido_em = ?, nome = ?, email = ?, evento = ?,
                            data_evento = ?, local = ?, telefone_norm = ?, telefone = ?, carga_horaria = ? WHERE codigo = ?""",

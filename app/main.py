@@ -16,7 +16,14 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.services.certificate import render_certificate_pdf, render_certificate_png, resolve_template_file
-from app.services.registro import DB_PATH, buscar_por_codigo, init_db, listar_registros_export, obter_ou_criar_codigo
+from app.services.registro import (
+    DB_PATH,
+    buscar_por_codigo,
+    init_db,
+    listar_registros_export,
+    mensagem_se_telefone_nao_confere_bd,
+    obter_ou_criar_codigo,
+)
 from app.services.sheets import find_event_meta, find_participant_by_email, list_eventos
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -86,6 +93,14 @@ def _get_participante(email: str, telefone: str, evento: str):
         raise HTTPException(status_code=502, detail=str(e)) from e
 
 
+def _get_participante_emitir(email: str, telefone: str, evento: str):
+    """Planilha + telefone já registado na BD (se existir) têm de coincidir com o pedido."""
+    msg_bd = mensagem_se_telefone_nao_confere_bd(email, evento, telefone)
+    if msg_bd:
+        raise HTTPException(status_code=403, detail=msg_bd)
+    return _get_participante(email, telefone, evento)
+
+
 @app.get("/api/eventos")
 def api_eventos():
     try:
@@ -115,7 +130,7 @@ def api_participante(
     telefone: str = Query(..., min_length=3, description="Telefone do participante"),
     evento: str = Query(..., min_length=1, description="Evento selecionado (coluna Evento)"),
 ):
-    p = _get_participante(email, telefone, evento)
+    p = _get_participante_emitir(email, telefone, evento)
     if not p:
         raise HTTPException(
             status_code=404,
@@ -151,7 +166,7 @@ def api_certificado_png(
     telefone: str = Query(..., min_length=3),
     evento: str = Query(..., min_length=1),
 ):
-    p = _get_participante(email, telefone, evento)
+    p = _get_participante_emitir(email, telefone, evento)
     if not p:
         raise HTTPException(
             status_code=404,
@@ -164,7 +179,10 @@ def api_certificado_png(
     except FileNotFoundError as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
     except ValueError as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        msg = str(e)
+        if "telefone não coincide" in msg.lower():
+            raise HTTPException(status_code=403, detail=msg) from e
+        raise HTTPException(status_code=500, detail=msg) from e
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
     return Response(
@@ -181,7 +199,7 @@ def api_certificado_pdf(
     telefone: str = Query(..., min_length=3),
     evento: str = Query(..., min_length=1),
 ):
-    p = _get_participante(email, telefone, evento)
+    p = _get_participante_emitir(email, telefone, evento)
     if not p:
         raise HTTPException(
             status_code=404,
@@ -194,7 +212,10 @@ def api_certificado_pdf(
     except FileNotFoundError as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
     except ValueError as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        msg = str(e)
+        if "telefone não coincide" in msg.lower():
+            raise HTTPException(status_code=403, detail=msg) from e
+        raise HTTPException(status_code=500, detail=msg) from e
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
     name = _slug_filename(p.get("nome") or "certificado")

@@ -329,7 +329,8 @@
 
           const telefoneDigits = (telefoneRaw || "").replace(/\D/g, "");
           const emailOk = !!emailRaw && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw);
-          const telefoneOk = telefoneDigits.length >= 5;
+          /* Só tenta gerar com telefone “completo” (evita pedidos com número pela metade). O servidor exige igualdade exata aos dígitos da planilha. */
+          const telefoneOk = telefoneDigits.length >= 8 && telefoneDigits.length <= 15;
 
           if (!emailRaw && !telefoneRaw) {
             setMeta("Informe o e-mail e o telefone para gerar o certificado.", "");
@@ -369,7 +370,10 @@
           }
 
           if (!telefoneOk) {
-            setMeta("O telefone deve conter pelo menos 5 dígitos.", "error");
+            setMeta(
+              "Digite o telefone completo (todos os dígitos), como na planilha — em geral 10 ou 11 com DDD.",
+              "error"
+            );
             btnPdf.disabled = true;
             lastOkEmail = "";
             lastOkTelefone = "";

@@ -39,34 +39,13 @@ def normalize_telefone(s: str) -> str:
     return "".join(c for c in (s or "") if c.isdigit())
 
 
-def _common_digit_count(a_digits: str, b_digits: str) -> int:
-    """Conta quantos dígitos coincidem com multiplicidade (0-9)."""
-    if not a_digits or not b_digits:
-        return 0
-    counts_a = [0] * 10
-    counts_b = [0] * 10
-    for c in a_digits:
-        d = ord(c) - ord("0")
-        if 0 <= d <= 9:
-            counts_a[d] += 1
-    for c in b_digits:
-        d = ord(c) - ord("0")
-        if 0 <= d <= 9:
-            counts_b[d] += 1
-    return sum(min(counts_a[i], counts_b[i]) for i in range(10))
-
-
-def telefones_batem_com_minimo(
-    telefone_lido: str,
-    telefone_planilha: str,
-    min_common_digits: int = 5,
-) -> bool:
-    """Valida se há pelo menos `min_common_digits` dígitos em comum (ignorando formatação)."""
+def telefone_digitos_iguais(telefone_lido: str, telefone_planilha: str) -> bool:
+    """Exige o mesmo número de dígitos e a mesma sequência (só após normalizar para dígitos)."""
     a = normalize_telefone(telefone_lido)
     b = normalize_telefone(telefone_planilha)
-    if len(a) < min_common_digits or len(b) < min_common_digits:
+    if not a or not b:
         return False
-    return _common_digit_count(a, b) >= min_common_digits
+    return a == b
 
 
 def normalize_evento(s: str) -> str:
@@ -169,7 +148,6 @@ def find_participant_by_email(
     telefone: str | None = None,
     evento: str | None = None,
     csv_url: str = DEFAULT_SHEET_CSV_URL,
-    min_common_digits: int = 5,
 ) -> dict[str, str] | None:
     target = _norm_email(email)
     if not target:
@@ -182,7 +160,7 @@ def find_participant_by_email(
             if normalize_evento(p.get("evento", "")) != ev_key:
                 continue
         if telefone is not None:
-            if not telefones_batem_com_minimo(telefone, p.get("telefone", ""), min_common_digits=min_common_digits):
+            if not telefone_digitos_iguais(telefone, p.get("telefone", "")):
                 continue
         return p
     return None
