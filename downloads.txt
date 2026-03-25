@@ -1,0 +1,3 @@
+SELECT id, codigo, nome, email, evento, data_evento, local, carga_horaria, emitido_em
+FROM certificado_registro
+ORDER BY id;
