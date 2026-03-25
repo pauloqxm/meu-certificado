@@ -10,7 +10,7 @@ import string
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app.services.sheets import normalize_email, normalize_evento
+from app.services.sheets import normalize_email, normalize_evento, normalize_telefone
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = BASE_DIR.parent
@@ -42,6 +42,8 @@ def _utc_now_iso() -> str:
 def init_db() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as conn:
+        # Tenta criar a tabela (caso ainda não exista). Em bases antigas, migraremos
+        # as colunas novas com ALTER TABLE logo a seguir.
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS certificado_registro (
@@ -54,12 +56,24 @@ def init_db() -> None:
                 evento TEXT NOT NULL DEFAULT '',
                 data_evento TEXT NOT NULL DEFAULT '',
                 local TEXT NOT NULL DEFAULT '',
+                telefone_norm TEXT NOT NULL DEFAULT '',
+                telefone TEXT NOT NULL DEFAULT '',
                 carga_horaria TEXT NOT NULL DEFAULT '',
                 emitido_em TEXT NOT NULL,
                 UNIQUE (email_norm, evento_norm)
             )
             """
         )
+        # Migração (compatível com versões anteriores da tabela):
+        # - adiciona `telefone_norm` e `telefone` se faltarem.
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(certificado_registro)").fetchall()}
+        if "telefone_norm" not in cols:
+            conn.execute(
+                "ALTER TABLE certificado_registro ADD COLUMN telefone_norm TEXT NOT NULL DEFAULT ''"
+            )
+        if "telefone" not in cols:
+            conn.execute("ALTER TABLE certificado_registro ADD COLUMN telefone TEXT NOT NULL DEFAULT ''")
+
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_certificado_codigo ON certificado_registro (codigo)"
         )
@@ -98,6 +112,10 @@ def obter_ou_criar_codigo(participant: dict[str, str]) -> str:
     evento = (participant.get("evento") or "").strip()
     data_evento = participant.get("data") or ""
     local = participant.get("local") or ""
+    telefone = (participant.get("telefone") or "").strip()
+    telefone_norm = normalize_telefone(telefone)
+    if not telefone_norm:
+        raise ValueError("Participante sem telefone para registo.")
     carga = participant.get("carga_horaria") or ""
 
     with sqlite3.connect(DB_PATH) as conn:
@@ -110,8 +128,19 @@ def obter_ou_criar_codigo(participant: dict[str, str]) -> str:
             codigo = row["codigo"]
             conn.execute(
                 """UPDATE certificado_registro SET emitido_em = ?, nome = ?, email = ?, evento = ?,
-                   data_evento = ?, local = ?, carga_horaria = ? WHERE codigo = ?""",
-                (_utc_now_iso(), nome, email, evento, data_evento, local, carga, codigo),
+                   data_evento = ?, local = ?, telefone_norm = ?, telefone = ?, carga_horaria = ? WHERE codigo = ?""",
+                (
+                    _utc_now_iso(),
+                    nome,
+                    email,
+                    evento,
+                    data_evento,
+                    local,
+                    telefone_norm,
+                    telefone,
+                    carga,
+                    codigo,
+                ),
             )
             conn.commit()
             return codigo
@@ -122,8 +151,8 @@ def obter_ou_criar_codigo(participant: dict[str, str]) -> str:
                 conn.execute(
                     """INSERT INTO certificado_registro (
                         codigo, email_norm, evento_norm, nome, email, evento,
-                        data_evento, local, carga_horaria, emitido_em
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        data_evento, local, telefone_norm, telefone, carga_horaria, emitido_em
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         codigo,
                         email_norm,
@@ -133,6 +162,8 @@ def obter_ou_criar_codigo(participant: dict[str, str]) -> str:
                         evento,
                         data_evento,
                         local,
+                        telefone_norm,
+                        telefone,
                         carga,
                         _utc_now_iso(),
                     ),
@@ -150,8 +181,19 @@ def obter_ou_criar_codigo(participant: dict[str, str]) -> str:
                     codigo_ex = row2["codigo"]
                     conn.execute(
                         """UPDATE certificado_registro SET emitido_em = ?, nome = ?, email = ?, evento = ?,
-                           data_evento = ?, local = ?, carga_horaria = ? WHERE codigo = ?""",
-                        (_utc_now_iso(), nome, email, evento, data_evento, local, carga, codigo_ex),
+                           data_evento = ?, local = ?, telefone_norm = ?, telefone = ?, carga_horaria = ? WHERE codigo = ?""",
+                        (
+                            _utc_now_iso(),
+                            nome,
+                            email,
+                            evento,
+                            data_evento,
+                            local,
+                            telefone_norm,
+                            telefone,
+                            carga,
+                            codigo_ex,
+                        ),
                     )
                     conn.commit()
                     return codigo_ex
@@ -168,7 +210,7 @@ def listar_registros_export() -> list[dict[str, str | int]]:
         rows = conn.execute(
             """
             SELECT id, codigo, email_norm, evento_norm, nome, email, evento,
-                   data_evento, local, carga_horaria, emitido_em
+                   data_evento, local, telefone_norm, telefone, carga_horaria, emitido_em
             FROM certificado_registro
             ORDER BY id
             """
@@ -197,6 +239,8 @@ def buscar_por_codigo(codigo_digitado: str) -> dict[str, str] | None:
             "evento": d["evento"] or "",
             "data_evento": d["data_evento"] or "",
             "local": d["local"] or "",
+            "telefone": d.get("telefone") or "",
+            "telefone_norm": d.get("telefone_norm") or "",
             "carga_horaria": d["carga_horaria"] or "",
             "emitido_em": d["emitido_em"] or "",
         }

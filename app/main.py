@@ -79,9 +79,9 @@ def export_page() -> FileResponse:
     return FileResponse(html)
 
 
-def _get_participante(email: str, evento: str):
+def _get_participante(email: str, telefone: str, evento: str):
     try:
-        return find_participant_by_email(email, evento=evento)
+        return find_participant_by_email(email, telefone=telefone, evento=evento)
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 
@@ -112,13 +112,14 @@ def api_template_png(evento: str = Query(..., min_length=1, description="Texto d
 @app.get("/api/participante")
 def api_participante(
     email: str = Query(..., min_length=3, description="E-mail do participante"),
+    telefone: str = Query(..., min_length=3, description="Telefone do participante"),
     evento: str = Query(..., min_length=1, description="Evento selecionado (coluna Evento)"),
 ):
-    p = _get_participante(email, evento)
+    p = _get_participante(email, telefone, evento)
     if not p:
         raise HTTPException(
             status_code=404,
-            detail="Participante não encontrado para este e-mail neste evento.",
+            detail="Participante não encontrado para este e-mail e telefone neste evento.",
         )
     return {
         "nome": p.get("nome"),
@@ -127,6 +128,7 @@ def api_participante(
         "local": p.get("local"),
         "carga_horaria": p.get("carga_horaria"),
         "email": p.get("email"),
+        "telefone": p.get("telefone"),
         "template": p.get("template"),
     }
 
@@ -146,13 +148,14 @@ def api_validar(codigo: str = Query(..., min_length=8, description="Código impr
 def api_certificado_png(
     request: Request,
     email: str = Query(..., min_length=3),
+    telefone: str = Query(..., min_length=3),
     evento: str = Query(..., min_length=1),
 ):
-    p = _get_participante(email, evento)
+    p = _get_participante(email, telefone, evento)
     if not p:
         raise HTTPException(
             status_code=404,
-            detail="Participante não encontrado para este e-mail neste evento.",
+            detail="Participante não encontrado para este e-mail e telefone neste evento.",
         )
     try:
         codigo = obter_ou_criar_codigo(p)
@@ -175,13 +178,14 @@ def api_certificado_png(
 def api_certificado_pdf(
     request: Request,
     email: str = Query(..., min_length=3),
+    telefone: str = Query(..., min_length=3),
     evento: str = Query(..., min_length=1),
 ):
-    p = _get_participante(email, evento)
+    p = _get_participante(email, telefone, evento)
     if not p:
         raise HTTPException(
             status_code=404,
-            detail="Participante não encontrado para este e-mail neste evento.",
+            detail="Participante não encontrado para este e-mail e telefone neste evento.",
         )
     try:
         codigo = obter_ou_criar_codigo(p)

@@ -34,6 +34,41 @@ def normalize_email(s: str) -> str:
     return _norm_email(s)
 
 
+def normalize_telefone(s: str) -> str:
+    """Telefone normalizado apenas com dígitos (ex.: '(88) 98142-8918' -> '88981428918')."""
+    return "".join(c for c in (s or "") if c.isdigit())
+
+
+def _common_digit_count(a_digits: str, b_digits: str) -> int:
+    """Conta quantos dígitos coincidem com multiplicidade (0-9)."""
+    if not a_digits or not b_digits:
+        return 0
+    counts_a = [0] * 10
+    counts_b = [0] * 10
+    for c in a_digits:
+        d = ord(c) - ord("0")
+        if 0 <= d <= 9:
+            counts_a[d] += 1
+    for c in b_digits:
+        d = ord(c) - ord("0")
+        if 0 <= d <= 9:
+            counts_b[d] += 1
+    return sum(min(counts_a[i], counts_b[i]) for i in range(10))
+
+
+def telefones_batem_com_minimo(
+    telefone_lido: str,
+    telefone_planilha: str,
+    min_common_digits: int = 5,
+) -> bool:
+    """Valida se há pelo menos `min_common_digits` dígitos em comum (ignorando formatação)."""
+    a = normalize_telefone(telefone_lido)
+    b = normalize_telefone(telefone_planilha)
+    if len(a) < min_common_digits or len(b) < min_common_digits:
+        return False
+    return _common_digit_count(a, b) >= min_common_digits
+
+
 def normalize_evento(s: str) -> str:
     """Comparação estável entre células (espaços, quebras de linha)."""
     t = unicodedata.normalize("NFKC", s or "")
@@ -75,6 +110,7 @@ def _row_to_participant(row: dict[str, Any]) -> dict[str, str]:
         "carga_horaria": pick("carga_horária", "carga_horaria", "carga horária"),
         "nome": pick("nome"),
         "email": pick("e-mail", "email", "e_mail"),
+        "telefone": pick("telefone", "tel"),
         "link": pick("link"),
         "template": pick("template"),
     }
@@ -130,8 +166,10 @@ def list_eventos(csv_url: str = DEFAULT_SHEET_CSV_URL) -> list[dict[str, str]]:
 
 def find_participant_by_email(
     email: str,
+    telefone: str | None = None,
     evento: str | None = None,
     csv_url: str = DEFAULT_SHEET_CSV_URL,
+    min_common_digits: int = 5,
 ) -> dict[str, str] | None:
     target = _norm_email(email)
     if not target:
@@ -142,6 +180,9 @@ def find_participant_by_email(
             continue
         if ev_key is not None:
             if normalize_evento(p.get("evento", "")) != ev_key:
+                continue
+        if telefone is not None:
+            if not telefones_batem_com_minimo(telefone, p.get("telefone", ""), min_common_digits=min_common_digits):
                 continue
         return p
     return None

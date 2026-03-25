@@ -11,8 +11,8 @@
       <header>
         <h1>Emissão de certificado</h1>
         <p>
-          Escolha o evento, confira data e local, depois informe o e-mail cadastrado na planilha para gerar a
-          pré-visualização e o PDF.
+          Escolha o evento, confira data e local, depois informe o e-mail e o telefone cadastrados na planilha para
+          gerar a pré-visualização e o PDF.
         </p>
       </header>
 
@@ -41,7 +41,7 @@
         </section>
 
         <section class="step hidden" id="stepEmail">
-          <h2 class="step-title">2. E-mail</h2>
+          <h2 class="step-title">2. E-mail e Telefone</h2>
           <label for="email">E-mail (cadastrado na planilha)</label>
           <input
             type="email"
@@ -49,6 +49,18 @@
             name="email"
             autocomplete="email"
             placeholder="ex.: nome.sobrenome@org.com.br"
+            spellcheck="false"
+            disabled
+          />
+
+          <label for="telefone" style="margin-top: 1rem">Telefone (cadastrado na planilha)</label>
+          <input
+            type="tel"
+            id="telefone"
+            name="telefone"
+            autocomplete="tel"
+            placeholder="ex.: (88) 98142-8918"
+            inputmode="tel"
             spellcheck="false"
             disabled
           />
@@ -89,6 +101,7 @@
         const templateName = document.getElementById("templateName");
         const stepEmail = document.getElementById("stepEmail");
         const emailInput = document.getElementById("email");
+        const phoneInput = document.getElementById("telefone");
         const meta = document.getElementById("meta");
         const frame = document.getElementById("frame");
         const btnPdf = document.getElementById("btnPdf");
@@ -96,6 +109,7 @@
 
         let debounceTimer = null;
         let lastOkEmail = "";
+        let lastOkTelefone = "";
         let lastObjectUrl = null;
         let templateObjectUrl = null;
         /** @type {{ evento: string, data: string, local: string, template: string }[]} */
@@ -177,9 +191,12 @@
           setMeta("");
           emailInput.value = "";
           emailInput.disabled = true;
+          phoneInput.value = "";
+          phoneInput.disabled = true;
           stepEmail.classList.add("hidden");
           btnPdf.disabled = true;
           lastOkEmail = "";
+          lastOkTelefone = "";
           revokePreviewUrl();
           eventDetails.classList.add("hidden");
           templateName.textContent = "";
@@ -206,6 +223,8 @@
           stepEmail.classList.remove("hidden");
           emailInput.disabled = false;
           emailInput.placeholder = "Informe o e-mail cadastrado para este evento";
+          phoneInput.disabled = false;
+          phoneInput.placeholder = "Informe o telefone cadastrado para este evento";
           emailInput.focus();
 
           try {
@@ -230,20 +249,22 @@
           }
         }
 
-        async function loadPreview(email) {
+        async function loadPreview(email, telefone) {
           const evName = selectedEvento();
           if (!evName) return;
 
           const qe = encodeURIComponent(evName);
           const qm = encodeURIComponent(email);
+          const qt = encodeURIComponent(telefone);
           setMeta("Carregando certificado…", "");
           btnPdf.disabled = true;
           lastOkEmail = "";
+          lastOkTelefone = "";
           revokePreviewUrl();
 
-          const res = await fetch("/api/certificado.png?evento=" + qe + "&email=" + qm);
+          const res = await fetch("/api/certificado.png?evento=" + qe + "&email=" + qm + "&telefone=" + qt);
           if (res.status === 404) {
-            setMeta("Nenhum participante com este e-mail neste evento.", "error");
+            setMeta("Nenhum participante com este e-mail e telefone neste evento.", "error");
             const q = encodeURIComponent(evName);
             const tr = await fetch("/api/template.png?evento=" + q);
             if (tr.ok) {
@@ -276,6 +297,7 @@
           );
           btnPdf.disabled = false;
           lastOkEmail = email;
+          lastOkTelefone = telefone;
         }
 
         function reloadTemplatePreview() {
@@ -296,31 +318,66 @@
         }
 
         function onEmailInput() {
-          const raw = emailInput.value.trim();
+          const emailRaw = emailInput.value.trim();
+          const telefoneRaw = phoneInput.value.trim();
+
           if (debounceTimer) clearTimeout(debounceTimer);
 
           if (!selectedEvento()) {
             return;
           }
 
-          if (!raw) {
+          const telefoneDigits = (telefoneRaw || "").replace(/\D/g, "");
+          const emailOk = !!emailRaw && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw);
+          const telefoneOk = telefoneDigits.length >= 5;
+
+          if (!emailRaw && !telefoneRaw) {
+            setMeta("Informe o e-mail e o telefone para gerar o certificado.", "");
+            btnPdf.disabled = true;
+            lastOkEmail = "";
+            lastOkTelefone = "";
+            revokePreviewUrl();
+            return;
+          }
+
+          if (!emailRaw) {
             setMeta("Informe o e-mail para gerar o certificado preenchido.", "");
             btnPdf.disabled = true;
             lastOkEmail = "";
+            lastOkTelefone = "";
             revokePreviewUrl();
             reloadTemplatePreview();
             return;
           }
 
-          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
+          if (!telefoneRaw) {
+            setMeta("Informe o telefone para gerar o certificado preenchido.", "");
+            btnPdf.disabled = true;
+            lastOkEmail = "";
+            lastOkTelefone = "";
+            revokePreviewUrl();
+            reloadTemplatePreview();
+            return;
+          }
+
+          if (!emailOk) {
             setMeta("Digite um e-mail válido.", "error");
             btnPdf.disabled = true;
             lastOkEmail = "";
+            lastOkTelefone = "";
+            return;
+          }
+
+          if (!telefoneOk) {
+            setMeta("O telefone deve conter pelo menos 5 dígitos.", "error");
+            btnPdf.disabled = true;
+            lastOkEmail = "";
+            lastOkTelefone = "";
             return;
           }
 
           debounceTimer = setTimeout(function () {
-            loadPreview(raw);
+            loadPreview(emailRaw, telefoneRaw);
           }, 450);
         }
 
@@ -333,11 +390,18 @@
           setTimeout(onEmailInput, 0);
         });
 
+        phoneInput.addEventListener("input", onEmailInput);
+        phoneInput.addEventListener("paste", function () {
+          setTimeout(onEmailInput, 0);
+        });
+
         btnPdf.addEventListener("click", function () {
-          if (!lastOkEmail || !selectedEvento()) return;
+          if (!lastOkEmail || !lastOkTelefone || !selectedEvento()) return;
           const qe = encodeURIComponent(selectedEvento());
           const qm = encodeURIComponent(lastOkEmail);
-          window.location.href = "/api/certificado.pdf?evento=" + qe + "&email=" + qm;
+          const qt = encodeURIComponent(lastOkTelefone);
+          window.location.href =
+            "/api/certificado.pdf?evento=" + qe + "&email=" + qm + "&telefone=" + qt;
         });
 
         btnClear.addEventListener("click", function () {
@@ -345,11 +409,15 @@
           emailInput.value = "";
           emailInput.disabled = true;
           emailInput.placeholder = "ex.: nome.sobrenome@org.com.br";
+          phoneInput.value = "";
+          phoneInput.disabled = true;
+          phoneInput.placeholder = "ex.: (88) 98142-8918";
           stepEmail.classList.add("hidden");
           setMeta("");
           showPlaceholder("Selecione um evento para carregar o modelo do certificado.");
           btnPdf.disabled = true;
           lastOkEmail = "";
+          lastOkTelefone = "";
           revokePreviewUrl();
           revokeTemplateUrl();
           eventDetails.classList.add("hidden");
