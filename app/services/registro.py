@@ -11,6 +11,7 @@ import string
 from datetime import datetime, timezone
 from io import StringIO
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from app.services.sheets import normalize_email, normalize_evento, normalize_telefone
 
@@ -33,12 +34,40 @@ def _resolve_db_path() -> Path:
 
 DB_PATH = _resolve_db_path()
 
+# Exibição na validação (mesmo fuso do carimbo do certificado).
+_EMITIDO_EM_EXIBICAO_TZ = ZoneInfo("America/Fortaleza")
+
 # Sem O/0, I/1, L para reduzir ambiguidade na leitura do código.
 _ALFABETO = "".join(c for c in (string.ascii_uppercase + string.digits) if c not in "O0I1L")
 
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _parse_emitido_em_utc(raw: str) -> datetime | None:
+    """Interpreta o valor guardado na BD (ISO com Z ou offset)."""
+    s = (raw or "").strip()
+    if not s:
+        return None
+    try:
+        if s.endswith("Z"):
+            return datetime.fromisoformat(s.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt
+    except ValueError:
+        return None
+
+
+def _emitido_em_texto_fortaleza(raw: str) -> str:
+    """Data/hora de emissão para mostrar ao utilizador (Fortaleza/CE)."""
+    dt = _parse_emitido_em_utc(raw)
+    if dt is None:
+        return (raw or "").strip()
+    local = dt.astimezone(_EMITIDO_EM_EXIBICAO_TZ)
+    return local.strftime("%d/%m/%Y às %H:%M:%S (Fortaleza/CE)")
 
 
 def init_db() -> None:
@@ -312,5 +341,5 @@ def buscar_por_codigo(codigo_digitado: str) -> dict[str, str] | None:
             "telefone": d.get("telefone") or "",
             "telefone_norm": d.get("telefone_norm") or "",
             "carga_horaria": d["carga_horaria"] or "",
-            "emitido_em": d["emitido_em"] or "",
+            "emitido_em": _emitido_em_texto_fortaleza(d["emitido_em"] or ""),
         }
