@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import secrets
 import sqlite3
@@ -13,8 +14,22 @@ from app.services.sheets import normalize_email, normalize_evento
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = BASE_DIR.parent
-DATA_DIR = PROJECT_ROOT / "data"
-DB_PATH = DATA_DIR / "certificados.db"
+
+
+def _resolve_db_path() -> Path:
+    """
+    Caminho da base de dados.
+    - Local: usa data/certificados.db
+    - Railway/produção: definir CERT_DB_PATH para um volume persistente
+      (ex.: /data/certificados.db).
+    """
+    env_path = (os.getenv("CERT_DB_PATH") or "").strip()
+    if env_path:
+        return Path(env_path)
+    return PROJECT_ROOT / "data" / "certificados.db"
+
+
+DB_PATH = _resolve_db_path()
 
 # Sem O/0, I/1, L para reduzir ambiguidade na leitura do código.
 _ALFABETO = "".join(c for c in (string.ascii_uppercase + string.digits) if c not in "O0I1L")
@@ -25,7 +40,7 @@ def _utc_now_iso() -> str:
 
 
 def init_db() -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             """

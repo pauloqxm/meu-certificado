@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.services.certificate import render_certificate_pdf, render_certificate_png, resolve_template_file
-from app.services.registro import buscar_por_codigo, init_db, obter_ou_criar_codigo
+from app.services.registro import DB_PATH, buscar_por_codigo, init_db, obter_ou_criar_codigo
 from app.services.sheets import find_event_meta, find_participant_by_email, list_eventos
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -186,4 +186,4 @@ def api_certificado_pdf(
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "db_path": str(DB_PATH)}
