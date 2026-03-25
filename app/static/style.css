@@ -189,6 +189,13 @@ input[type="tel"]:disabled {
   cursor: not-allowed;
 }
 
+input[type="file"] {
+  width: 100%;
+  padding: 0.65rem 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
 .meta {
   margin-top: 1rem;
   font-size: 0.9rem;

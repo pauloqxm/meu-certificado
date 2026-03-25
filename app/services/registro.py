@@ -317,6 +317,77 @@ def export_registros_csv_bytes() -> bytes:
     return buf.getvalue().encode("utf-8-sig")
 
 
+def _sqlite_tabela_existe(conn: sqlite3.Connection, nome: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+        (nome,),
+    ).fetchone()
+    return row is not None
+
+
+def importar_merge_sqlite(origem: Path) -> dict[str, int]:
+    """
+    Lê certificado_registro de outro ficheiro .db e incorpora na base atual.
+    Usa INSERT OR IGNORE: não apaga linhas; ignora duplicados por `codigo` ou (email_norm, evento_norm).
+    """
+    init_db()
+    origem = Path(origem).resolve()
+    if not origem.is_file():
+        raise ValueError("O ficheiro de origem não existe.")
+
+    with sqlite3.connect(DB_PATH) as dst:
+        antes = int(dst.execute("SELECT COUNT(*) FROM certificado_registro").fetchone()[0])
+
+        try:
+            with sqlite3.connect(str(origem)) as src:
+                if not _sqlite_tabela_existe(src, "certificado_registro"):
+                    raise ValueError("O ficheiro não contém a tabela certificado_registro.")
+                src.row_factory = sqlite3.Row
+                rows = src.execute("SELECT * FROM certificado_registro").fetchall()
+        except sqlite3.Error as e:
+            raise ValueError(f"Não foi possível ler o SQLite enviado: {e}") from e
+
+        for row in rows:
+            d = dict(row)
+            codigo = (d.get("codigo") or "").strip()
+            if not codigo:
+                continue
+            emitido = (d.get("emitido_em") or "").strip() or _utc_now_iso()
+            dst.execute(
+                """
+                INSERT OR IGNORE INTO certificado_registro (
+                    codigo, email_norm, evento_norm, nome, email, evento,
+                    data_evento, local, telefone_norm, telefone, carga_horaria, emitido_em
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    codigo,
+                    (d.get("email_norm") or "").strip(),
+                    (d.get("evento_norm") or "").strip(),
+                    (d.get("nome") or "").strip(),
+                    (d.get("email") or "").strip(),
+                    (d.get("evento") or "").strip(),
+                    (d.get("data_evento") or "").strip(),
+                    (d.get("local") or "").strip(),
+                    (d.get("telefone_norm") or "").strip(),
+                    (d.get("telefone") or "").strip(),
+                    (d.get("carga_horaria") or "").strip(),
+                    emitido,
+                ),
+            )
+
+        dst.commit()
+        depois = int(dst.execute("SELECT COUNT(*) FROM certificado_registro").fetchone()[0])
+
+    novos = depois - antes
+    return {
+        "registos_no_ficheiro": len(rows),
+        "registos_na_base_antes": antes,
+        "registos_na_base_depois": depois,
+        "novos_inseridos": novos,
+    }
+
+
 def buscar_por_codigo(codigo_digitado: str) -> dict[str, str] | None:
     init_db()
     canon = normalizar_codigo_digitado(codigo_digitado)

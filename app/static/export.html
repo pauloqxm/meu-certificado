@@ -11,7 +11,10 @@
     <div class="wrap">
       <header>
         <h1>Exportar dados</h1>
-        <p>Descarregue uma cópia da base de registos (SQLite) ou a listagem em JSON / CSV.</p>
+        <p>
+          Descarregue uma cópia da base de registos (SQLite) ou a listagem em JSON / CSV. Se perdeu dados após um
+          redeploy, envie aqui o <code>.db</code> guardado: só entram linhas novas (duplicados são ignorados).
+        </p>
       </header>
 
       <div class="card">
@@ -45,6 +48,24 @@
           <a href="/" class="link-home">Emissão</a>
           <a href="/validar" class="link-home">Validar</a>
         </div>
+
+        <hr style="margin: 1.75rem 0; border: none; border-top: 1px solid rgba(148, 163, 184, 0.2)" />
+
+        <h2 class="step-title">Mesclar base de dados (.db)</h2>
+        <p class="hint" style="margin-top: 0">
+          Use o mesmo token. O ficheiro deve ser um backup desta aplicação (export SQLite). Linhas com o mesmo código
+          ou o mesmo e-mail+evento já registados não são duplicadas.
+        </p>
+        <label for="fileDb">Ficheiro SQLite</label>
+        <input
+          type="file"
+          id="fileDb"
+          name="fileDb"
+          accept=".db,.sqlite,.sqlite3,application/x-sqlite3,application/octet-stream"
+        />
+        <div class="actions" style="margin-top: 1rem">
+          <button type="button" class="ghost" id="btnImport">Enviar e mesclar</button>
+        </div>
       </div>
 
       <footer>Área administrativa da organização do evento.</footer>
@@ -56,6 +77,8 @@
         var tokenEl = document.getElementById("token");
         var showToken = document.getElementById("showToken");
         var btn = document.getElementById("btnDownload");
+        var btnImport = document.getElementById("btnImport");
+        var fileDb = document.getElementById("fileDb");
         var meta = document.getElementById("meta");
 
         showToken.addEventListener("change", function () {
@@ -121,6 +144,70 @@
               setMeta(e.message || "Falha na descarga.", true, false);
             })
             .finally(function () {
+              btn.disabled = false;
+            });
+        });
+
+        btnImport.addEventListener("click", function () {
+          var token = (tokenEl.value || "").trim();
+          if (!token) {
+            setMeta("Indique o token de exportação.", true, false);
+            return;
+          }
+          var f = fileDb.files && fileDb.files[0];
+          if (!f) {
+            setMeta("Escolha um ficheiro .db para enviar.", true, false);
+            return;
+          }
+          var fd = new FormData();
+          fd.append("file", f);
+          setMeta("A enviar e mesclar…", false, false);
+          btnImport.disabled = true;
+          btn.disabled = true;
+
+          fetch("/api/admin/import-db", {
+            method: "POST",
+            headers: {
+              Authorization: "Bearer " + token,
+            },
+            body: fd,
+          })
+            .then(function (res) {
+              if (!res.ok) {
+                return res.text().then(function (txt) {
+                  var d = "Erro " + res.status;
+                  try {
+                    var body = JSON.parse(txt);
+                    if (body && body.detail) {
+                      d =
+                        typeof body.detail === "string"
+                          ? body.detail
+                          : JSON.stringify(body.detail);
+                    }
+                  } catch (ignore) {}
+                  throw new Error(d);
+                });
+              }
+              return res.json();
+            })
+            .then(function (data) {
+              setMeta(
+                "Mesclagem concluída: " +
+                  data.novos_inseridos +
+                  " novo(s). Registos no ficheiro: " +
+                  data.registos_no_ficheiro +
+                  ". Total na base agora: " +
+                  data.registos_na_base_depois +
+                  ".",
+                false,
+                true
+              );
+            })
+            .catch(function (e) {
+              setMeta(e.message || "Falha ao mesclar.", true, false);
+            })
+            .finally(function () {
+              btnImport.disabled = false;
               btn.disabled = false;
             });
         });

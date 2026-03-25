@@ -7,10 +7,11 @@ import re
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Literal
 from urllib.parse import quote
 
-from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -20,6 +21,7 @@ from app.services.registro import (
     DB_PATH,
     buscar_por_codigo,
     export_registros_csv_bytes,
+    importar_merge_sqlite,
     init_db,
     listar_registros_export,
     mensagem_se_telefone_nao_confere_bd,
@@ -29,6 +31,8 @@ from app.services.sheets import find_event_meta, find_participant_by_email, list
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
+
+_ADMIN_IMPORT_MAX_BYTES = 25 * 1024 * 1024
 
 
 @asynccontextmanager
@@ -334,3 +338,39 @@ def api_admin_export(
         media_type="application/vnd.sqlite3",
         content_disposition_type="attachment",
     )
+
+
+@app.post("/api/admin/import-db")
+async def api_admin_import_db(
+    file: UploadFile = File(..., description="Ficheiro .db exportado (mesma app)"),
+    x_cert_export_token: str | None = Header(None, alias="X-Cert-Export-Token"),
+    authorization: str | None = Header(None, alias="Authorization"),
+    export_token: str | None = Form(None),
+):
+    """
+    Mescla registos do .db enviado na base atual (INSERT OR IGNORE).
+    Útil após redeploy com volume novo: não apaga linhas existentes.
+    Mesmo token que CERT_EXPORT_TOKEN (header Bearer ou form export_token).
+    """
+    _require_export_token(x_cert_export_token, export_token, authorization)
+
+    content = await file.read()
+    if len(content) > _ADMIN_IMPORT_MAX_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Ficheiro demasiado grande (máximo {_ADMIN_IMPORT_MAX_BYTES // (1024 * 1024)} MB).",
+        )
+    if len(content) < 64:
+        raise HTTPException(status_code=400, detail="Ficheiro vazio ou inválido.")
+
+    with NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        tmp.write(content)
+        tmp_path = Path(tmp.name)
+    try:
+        stats = importar_merge_sqlite(tmp_path)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    return stats
