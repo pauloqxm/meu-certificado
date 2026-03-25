@@ -8,7 +8,7 @@ param(
     [string] $BaseUrl = "https://meu-certificado.up.railway.app",
     [Parameter(Mandatory = $true)]
     [string] $Token,
-    [ValidateSet("sqlite", "json")]
+    [ValidateSet("sqlite", "json", "csv")]
     [string] $Format = "sqlite",
     [string] $OutFile = ""
 )
@@ -20,7 +20,11 @@ $query = "export_format=$Format"
 $url = "$safeBase/api/admin/export?$query"
 
 if (-not $OutFile) {
-    $OutFile = if ($Format -eq "json") { "certificados_export.json" } else { "certificados_backup.db" }
+    $OutFile = switch ($Format) {
+        "json" { "certificados_export.json" }
+        "csv" { "certificados_export.csv" }
+        Default { "certificados_backup.db" }
+    }
 }
 
 if (-not [System.IO.Path]::IsPathRooted($OutFile)) {

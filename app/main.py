@@ -19,6 +19,7 @@ from app.services.certificate import render_certificate_pdf, render_certificate_
 from app.services.registro import (
     DB_PATH,
     buscar_por_codigo,
+    export_registros_csv_bytes,
     init_db,
     listar_registros_export,
     mensagem_se_telefone_nao_confere_bd,
@@ -278,9 +279,9 @@ def _require_export_token(
 
 @app.get("/api/admin/export")
 def api_admin_export(
-    export_format: Literal["sqlite", "json"] = Query(
+    export_format: Literal["sqlite", "json", "csv"] = Query(
         "sqlite",
-        description="sqlite = ficheiro .db completo; json = todos os registos em JSON.",
+        description="sqlite = .db completo; json | csv = tabela de registos.",
     ),
     x_cert_export_token: str | None = Header(None, alias="X-Cert-Export-Token"),
     authorization: str | None = Header(None, alias="Authorization"),
@@ -302,6 +303,11 @@ def api_admin_export(
         curl -f -H "X-Cert-Export-Token: SEU_TOKEN" \\
           "https://SEU_DOMINIO/api/admin/export?export_format=json"
 
+    Exemplo (CSV):
+
+        curl -f -L -o certificados.csv -H "Authorization: Bearer SEU_TOKEN" \\
+          "https://SEU_DOMINIO/api/admin/export?export_format=csv"
+
     Ou com Bearer (evita problemas com + e & no token na URL):
 
         curl -f -H "Authorization: Bearer SEU_TOKEN" \\
@@ -311,6 +317,14 @@ def api_admin_export(
 
     if export_format == "json":
         return listar_registros_export()
+
+    if export_format == "csv":
+        data = export_registros_csv_bytes()
+        return Response(
+            content=data,
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="certificados_export.csv"'},
+        )
 
     if not DB_PATH.is_file():
         raise HTTPException(status_code=404, detail=f"Ficheiro da base não encontrado: {DB_PATH}")

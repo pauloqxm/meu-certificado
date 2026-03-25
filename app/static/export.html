@@ -11,10 +11,7 @@
     <div class="wrap">
       <header>
         <h1>Exportar dados</h1>
-        <p>
-          Descarregue uma cópia da base de registos (SQLite) ou a listagem em JSON. O token é o valor definido em
-          <strong>CERT_EXPORT_TOKEN</strong> no Railway — use apenas em rede confiável.
-        </p>
+        <p>Descarregue uma cópia da base de registos (SQLite) ou a listagem em JSON / CSV.</p>
       </header>
 
       <div class="card">
@@ -22,6 +19,7 @@
         <select id="formato" name="formato">
           <option value="sqlite">SQLite (.db) — base completa</option>
           <option value="json">JSON — tabela de registos</option>
+          <option value="csv">CSV — tabela de registos (Excel)</option>
         </select>
 
         <label for="token" style="margin-top: 1.25rem">Token de exportação</label>
@@ -110,8 +108,9 @@
               });
             })
             .then(function (r) {
-              var name =
-                fmt === "json" ? "certificados_export.json" : "certificados_backup.db";
+              var name = "certificados_backup.db";
+              if (fmt === "json") name = "certificados_export.json";
+              else if (fmt === "csv") name = "certificados_export.csv";
               var a = document.createElement("a");
               a.href = URL.createObjectURL(r.blob);
               a.download = name;

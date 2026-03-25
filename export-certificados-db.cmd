@@ -2,13 +2,13 @@
 REM Chama o PowerShell para passar o token no header (funciona com #, +, & no token).
 REM Exemplo:
 REM   export-certificados-db.cmd "O_TEU_TOKEN_AQUI"
-REM Ou com URL e formato JSON:
+REM Ou com URL e formato JSON ou CSV:
 REM   export-certificados-db.cmd "TOKEN" "https://meu-certificado.up.railway.app" json
 
 setlocal
 set "TOKEN=%~1"
 if "%TOKEN%"=="" (
-  echo Uso: %~nx0 TOKEN [BaseUrl] [sqlite^|json]
+  echo Uso: %~nx0 TOKEN [BaseUrl] [sqlite^|json^|csv]
   exit /b 1
 )
 

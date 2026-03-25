@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import csv
 import os
 import re
 import secrets
 import sqlite3
 import string
 from datetime import datetime, timezone
+from io import StringIO
 from pathlib import Path
 
 from app.services.sheets import normalize_email, normalize_evento, normalize_telefone
@@ -242,6 +244,23 @@ def obter_ou_criar_codigo(participant: dict[str, str]) -> str:
     raise RuntimeError("Não foi possível gerar código de verificação único.")
 
 
+_EXPORT_COLUMNS = (
+    "id",
+    "codigo",
+    "email_norm",
+    "evento_norm",
+    "nome",
+    "email",
+    "evento",
+    "data_evento",
+    "local",
+    "telefone_norm",
+    "telefone",
+    "carga_horaria",
+    "emitido_em",
+)
+
+
 def listar_registros_export() -> list[dict[str, str | int]]:
     """Lista todos os registos (para export JSON/relatório)."""
     init_db()
@@ -256,6 +275,17 @@ def listar_registros_export() -> list[dict[str, str | int]]:
             """
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def export_registros_csv_bytes() -> bytes:
+    """CSV (UTF-8 com BOM) com os mesmos campos que o export JSON."""
+    rows = listar_registros_export()
+    buf = StringIO()
+    writer = csv.DictWriter(buf, fieldnames=_EXPORT_COLUMNS, extrasaction="ignore", lineterminator="\r\n")
+    writer.writeheader()
+    for r in rows:
+        writer.writerow({k: r.get(k, "") for k in _EXPORT_COLUMNS})
+    return buf.getvalue().encode("utf-8-sig")
 
 
 def buscar_por_codigo(codigo_digitado: str) -> dict[str, str] | None:
