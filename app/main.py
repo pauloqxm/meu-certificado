@@ -202,19 +202,45 @@ def health():
     return {"status": "ok", "db_path": str(DB_PATH)}
 
 
+def _normalize_export_token(raw: str | None) -> str:
+    if not raw:
+        return ""
+    t = raw.strip()
+    if t.startswith("\ufeff"):
+        t = t.lstrip("\ufeff").strip()
+    return t
+
+
 def _require_export_token(
     x_cert_export_token: str | None,
     export_token: str | None,
+    authorization: str | None,
 ) -> None:
-    expected = (os.getenv("CERT_EXPORT_TOKEN") or "").strip()
+    expected = _normalize_export_token(os.getenv("CERT_EXPORT_TOKEN"))
     if not expected:
         raise HTTPException(
             status_code=503,
             detail="Exportação desativada: defina a variável CERT_EXPORT_TOKEN no Railway (valor secreto e aleatório).",
         )
-    got = (x_cert_export_token or export_token or "").strip()
-    if not got or not secrets.compare_digest(got, expected):
-        raise HTTPException(status_code=403, detail="Token de exportação inválido ou em falta.")
+    bearer: str | None = None
+    if authorization:
+        auth = authorization.strip()
+        if auth.lower().startswith("bearer "):
+            bearer = _normalize_export_token(auth[7:])
+
+    got = _normalize_export_token(
+        x_cert_export_token or export_token or bearer,
+    )
+    if len(got) != len(expected) or not secrets.compare_digest(got, expected):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Token de exportação inválido ou em falta. "
+                "Confirme CERT_EXPORT_TOKEN no Railway (sem aspas em volta). "
+                "Se o token está na URL, codifique: + como %2B, & como %26. "
+                "Preferível: header X-Cert-Export-Token ou Authorization: Bearer … (curl / Postman)."
+            ),
+        )
 
 
 @app.get("/api/admin/export")
@@ -224,6 +250,7 @@ def api_admin_export(
         description="sqlite = ficheiro .db completo; json = todos os registos em JSON.",
     ),
     x_cert_export_token: str | None = Header(None, alias="X-Cert-Export-Token"),
+    authorization: str | None = Header(None, alias="Authorization"),
     export_token: str | None = Query(
         None,
         description="Alternativa ao header (evite em proxies compartilhados — pode ficar em logs de URL).",
@@ -241,8 +268,13 @@ def api_admin_export(
 
         curl -f -H "X-Cert-Export-Token: SEU_TOKEN" \\
           "https://SEU_DOMINIO/api/admin/export?export_format=json"
+
+    Ou com Bearer (evita problemas com + e & no token na URL):
+
+        curl -f -H "Authorization: Bearer SEU_TOKEN" \\
+          "https://SEU_DOMINIO/api/admin/export?export_format=sqlite" -o certificados.db
     """
-    _require_export_token(x_cert_export_token, export_token)
+    _require_export_token(x_cert_export_token, export_token, authorization)
 
     if export_format == "json":
         return listar_registros_export()
