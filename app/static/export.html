@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Exportar registo de certificados</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <h1>Exportar dados</h1>
+        <p>
+          Descarregue uma cópia da base de registos (SQLite) ou a listagem em JSON. O token é o valor definido em
+          <strong>CERT_EXPORT_TOKEN</strong> no Railway — use apenas em rede confiável.
+        </p>
+      </header>
+
+      <div class="card">
+        <label for="formato">Tipo de ficheiro</label>
+        <select id="formato" name="formato">
+          <option value="sqlite">SQLite (.db) — base completa</option>
+          <option value="json">JSON — tabela de registos</option>
+        </select>
+
+        <label for="token" style="margin-top: 1.25rem">Token de exportação</label>
+        <input
+          type="password"
+          id="token"
+          name="token"
+          autocomplete="off"
+          placeholder="Cole o token (pode conter #, +, etc.)"
+          spellcheck="false"
+        />
+        <p class="hint">
+          <label style="display: inline; font-weight: normal; cursor: pointer; color: var(--muted)">
+            <input type="checkbox" id="showToken" style="width: auto; margin-right: 0.35rem" />
+            Mostrar token
+          </label>
+        </p>
+
+        <div class="meta" id="meta" aria-live="polite"></div>
+
+        <div class="actions" style="margin-top: 1.25rem">
+          <button type="button" class="primary" id="btnDownload">Descarregar</button>
+          <a href="/" class="link-home">Emissão</a>
+          <a href="/validar" class="link-home">Validar</a>
+        </div>
+      </div>
+
+      <footer>
+        O token não é enviado na barra de endereços; a página usa pedido seguro com cabeçalho
+        <code>Authorization: Bearer …</code>.
+      </footer>
+    </div>
+
+    <script>
+      (function () {
+        var formato = document.getElementById("formato");
+        var tokenEl = document.getElementById("token");
+        var showToken = document.getElementById("showToken");
+        var btn = document.getElementById("btnDownload");
+        var meta = document.getElementById("meta");
+
+        showToken.addEventListener("change", function () {
+          tokenEl.type = showToken.checked ? "text" : "password";
+        });
+
+        function setMeta(msg, isErr, isOk) {
+          meta.textContent = msg || "";
+          meta.className = "meta" + (isErr ? " error" : isOk ? " ok" : "");
+        }
+
+        btn.addEventListener("click", function () {
+          var token = (tokenEl.value || "").trim();
+          if (!token) {
+            setMeta("Indique o token de exportação.", true, false);
+            return;
+          }
+          var fmt = formato.value || "sqlite";
+          var url = "/api/admin/export?export_format=" + encodeURIComponent(fmt);
+          setMeta("A descarregar…", false, false);
+          btn.disabled = true;
+
+          fetch(url, {
+            method: "GET",
+            headers: {
+              Authorization: "Bearer " + token,
+            },
+          })
+            .then(function (res) {
+              if (!res.ok) {
+                return res.text().then(function (txt) {
+                  var d = "Erro " + res.status;
+                  try {
+                    var body = JSON.parse(txt);
+                    if (body && body.detail) {
+                      d =
+                        typeof body.detail === "string"
+                          ? body.detail
+                          : JSON.stringify(body.detail);
+                    }
+                  } catch (ignore) {}
+                  throw new Error(d);
+                });
+              }
+              return res.blob().then(function (blob) {
+                return { blob: blob };
+              });
+            })
+            .then(function (r) {
+              var name =
+                fmt === "json" ? "certificados_export.json" : "certificados_backup.db";
+              var a = document.createElement("a");
+              a.href = URL.createObjectURL(r.blob);
+              a.download = name;
+              document.body.appendChild(a);
+              a.click();
+              URL.revokeObjectURL(a.href);
+              a.remove();
+              setMeta("Ficheiro guardado: " + name + " (pasta de descargas do navegador).", false, true);
+            })
+            .catch(function (e) {
+              setMeta(e.message || "Falha na descarga.", true, false);
+            })
+            .finally(function () {
+              btn.disabled = false;
+            });
+        });
+      })();
+    </script>
+  </body>
+</html>

@@ -71,6 +71,14 @@ def validar_page() -> FileResponse:
     return FileResponse(html)
 
 
+@app.get("/export")
+def export_page() -> FileResponse:
+    html = STATIC_DIR / "export.html"
+    if not html.is_file():
+        raise HTTPException(status_code=500, detail="Página de exportação não encontrada.")
+    return FileResponse(html)
+
+
 def _get_participante(email: str, evento: str):
     try:
         return find_participant_by_email(email, evento=evento)
@@ -237,7 +245,7 @@ def _require_export_token(
             detail=(
                 "Token de exportação inválido ou em falta. "
                 "Confirme CERT_EXPORT_TOKEN no Railway (sem aspas em volta). "
-                "Se o token está na URL, codifique: + como %2B, & como %26. "
+                "Na URL, codifique o token: # como %23 (senão o navegador corta), + como %2B, & como %26. "
                 "Preferível: header X-Cert-Export-Token ou Authorization: Bearer … (curl / Postman)."
             ),
         )
