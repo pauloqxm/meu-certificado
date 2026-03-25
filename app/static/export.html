@@ -34,8 +34,8 @@
           placeholder="Cole o token (pode conter #, +, etc.)"
           spellcheck="false"
         />
-        <p class="hint">
-          <label style="display: inline; font-weight: normal; cursor: pointer; color: var(--muted)">
+        <p class="hint-subtle">
+          <label style="display: inline; font-weight: normal; cursor: pointer; color: inherit">
             <input type="checkbox" id="showToken" style="width: auto; margin-right: 0.35rem" />
             Mostrar token
           </label>
@@ -49,10 +49,10 @@
           <a href="/validar" class="link-home">Validar</a>
         </div>
 
-        <hr style="margin: 1.75rem 0; border: none; border-top: 1px solid rgba(148, 163, 184, 0.2)" />
+        <hr class="divider" />
 
         <h2 class="step-title">Mesclar base de dados (.db)</h2>
-        <p class="hint" style="margin-top: 0">
+        <p class="hint-subtle" style="margin-top: 0">
           Use o mesmo token. O ficheiro deve ser um backup desta aplicação (export SQLite). Linhas com o mesmo código
           ou o mesmo e-mail+evento já registados não são duplicadas.
         </p>
