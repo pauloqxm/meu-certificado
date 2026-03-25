@@ -160,6 +160,22 @@ def obter_ou_criar_codigo(participant: dict[str, str]) -> str:
     raise RuntimeError("Não foi possível gerar código de verificação único.")
 
 
+def listar_registros_export() -> list[dict[str, str | int]]:
+    """Lista todos os registos (para export JSON/relatório)."""
+    init_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT id, codigo, email_norm, evento_norm, nome, email, evento,
+                   data_evento, local, carga_horaria, emitido_em
+            FROM certificado_registro
+            ORDER BY id
+            """
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def buscar_por_codigo(codigo_digitado: str) -> dict[str, str] | None:
     init_db()
     canon = normalizar_codigo_digitado(codigo_digitado)

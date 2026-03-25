@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+import os
 import re
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 from urllib.parse import quote
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.services.certificate import render_certificate_pdf, render_certificate_png, resolve_template_file
-from app.services.registro import DB_PATH, buscar_por_codigo, init_db, obter_ou_criar_codigo
+from app.services.registro import DB_PATH, buscar_por_codigo, init_db, listar_registros_export, obter_ou_criar_codigo
 from app.services.sheets import find_event_meta, find_participant_by_email, list_eventos
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -197,3 +200,58 @@ def api_certificado_pdf(
 @app.get("/api/health")
 def health():
     return {"status": "ok", "db_path": str(DB_PATH)}
+
+
+def _require_export_token(
+    x_cert_export_token: str | None,
+    export_token: str | None,
+) -> None:
+    expected = (os.getenv("CERT_EXPORT_TOKEN") or "").strip()
+    if not expected:
+        raise HTTPException(
+            status_code=503,
+            detail="Exportação desativada: defina a variável CERT_EXPORT_TOKEN no Railway (valor secreto e aleatório).",
+        )
+    got = (x_cert_export_token or export_token or "").strip()
+    if not got or not secrets.compare_digest(got, expected):
+        raise HTTPException(status_code=403, detail="Token de exportação inválido ou em falta.")
+
+
+@app.get("/api/admin/export")
+def api_admin_export(
+    export_format: Literal["sqlite", "json"] = Query(
+        "sqlite",
+        description="sqlite = ficheiro .db completo; json = todos os registos em JSON.",
+    ),
+    x_cert_export_token: str | None = Header(None, alias="X-Cert-Export-Token"),
+    export_token: str | None = Query(
+        None,
+        description="Alternativa ao header (evite em proxies compartilhados — pode ficar em logs de URL).",
+    ),
+):
+    """
+    Backup dos dados de registo. Protegido por CERT_EXPORT_TOKEN.
+
+    Exemplo (curl, SQLite):
+
+        curl -f -L -o certificados.db -H "X-Cert-Export-Token: SEU_TOKEN" \\
+          "https://SEU_DOMINIO/api/admin/export?export_format=sqlite"
+
+    Exemplo (JSON):
+
+        curl -f -H "X-Cert-Export-Token: SEU_TOKEN" \\
+          "https://SEU_DOMINIO/api/admin/export?export_format=json"
+    """
+    _require_export_token(x_cert_export_token, export_token)
+
+    if export_format == "json":
+        return listar_registros_export()
+
+    if not DB_PATH.is_file():
+        raise HTTPException(status_code=404, detail=f"Ficheiro da base não encontrado: {DB_PATH}")
+    return FileResponse(
+        path=str(DB_PATH),
+        filename="certificados_backup.db",
+        media_type="application/vnd.sqlite3",
+        content_disposition_type="attachment",
+    )
