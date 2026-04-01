@@ -91,16 +91,18 @@ def export_page() -> FileResponse:
     return FileResponse(html)
 
 
-def _get_participante(email: str, telefone: str, evento: str):
+def _get_participante(email: str | None, telefone: str | None, evento: str):
+    if not (email or "").strip() and not (telefone or "").strip():
+        raise HTTPException(status_code=422, detail="Informe e-mail ou telefone.")
     try:
         return find_participant_by_email_or_telefone(email=email, telefone=telefone, evento=evento)
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 
 
-def _get_participante_emitir(email: str, telefone: str, evento: str):
+def _get_participante_emitir(email: str | None, telefone: str | None, evento: str):
     """Planilha + telefone já registado na BD (se existir) têm de coincidir com o pedido."""
-    msg_bd = mensagem_se_telefone_nao_confere_bd(email, evento, telefone)
+    msg_bd = mensagem_se_telefone_nao_confere_bd(email or "", evento, telefone or "")
     if msg_bd:
         raise HTTPException(status_code=403, detail=msg_bd)
     return _get_participante(email, telefone, evento)
@@ -131,8 +133,8 @@ def api_template_png(evento: str = Query(..., min_length=1, description="Texto d
 
 @app.get("/api/participante")
 def api_participante(
-    email: str = Query(..., min_length=3, description="E-mail do participante"),
-    telefone: str = Query(..., min_length=3, description="Telefone do participante"),
+    email: str | None = Query(None, description="E-mail do participante"),
+    telefone: str | None = Query(None, description="Telefone do participante"),
     evento: str = Query(..., min_length=1, description="Evento selecionado (coluna Evento)"),
 ):
     p = _get_participante_emitir(email, telefone, evento)
@@ -167,8 +169,8 @@ def api_validar(codigo: str = Query(..., min_length=8, description="Código impr
 @app.get("/api/certificado.png")
 def api_certificado_png(
     request: Request,
-    email: str = Query(..., min_length=3),
-    telefone: str = Query(..., min_length=3),
+    email: str | None = Query(None),
+    telefone: str | None = Query(None),
     evento: str = Query(..., min_length=1),
 ):
     p = _get_participante_emitir(email, telefone, evento)
@@ -200,8 +202,8 @@ def api_certificado_png(
 @app.get("/api/certificado.pdf")
 def api_certificado_pdf(
     request: Request,
-    email: str = Query(..., min_length=3),
-    telefone: str = Query(..., min_length=3),
+    email: str | None = Query(None),
+    telefone: str | None = Query(None),
     evento: str = Query(..., min_length=1),
 ):
     p = _get_participante_emitir(email, telefone, evento)

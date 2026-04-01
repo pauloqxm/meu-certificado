@@ -11,7 +11,7 @@
       <header>
         <h1>Emissão de certificado</h1>
         <p>
-          Escolha o evento, confira data e local, depois informe o e-mail e o telefone cadastrados na inscrição para
+          Escolha o evento, confira data e local, depois informe o e-mail ou o telefone cadastrado na inscrição para
           gerar a pré-visualização e o PDF.
         </p>
       </header>
@@ -41,7 +41,7 @@
         </section>
 
         <section class="step hidden" id="stepEmail">
-          <h2 class="step-title">2. E-mail e Telefone</h2>
+          <h2 class="step-title">2. E-mail ou Telefone</h2>
           <label for="email">E-mail (cadastrado na inscrição)</label>
           <input
             type="email"
@@ -221,9 +221,9 @@
 
           stepEmail.classList.remove("hidden");
           emailInput.disabled = false;
-          emailInput.placeholder = "Informe o e-mail da inscrição neste evento";
+          emailInput.placeholder = "Informe o e-mail da inscrição (opcional se usar telefone)";
           phoneInput.disabled = false;
-          phoneInput.placeholder = "Informe o telefone da inscrição neste evento";
+          phoneInput.placeholder = "Informe o telefone da inscrição (opcional se usar e-mail)";
           emailInput.focus();
 
           try {
@@ -241,7 +241,7 @@
             revokeTemplateUrl();
             templateObjectUrl = URL.createObjectURL(blob);
             showPreview(templateObjectUrl);
-            setMeta("Modelo carregado. Informe o e-mail e o telefone da inscrição para ver o certificado preenchido.", "ok");
+            setMeta("Modelo carregado. Informe e-mail ou telefone da inscrição para ver o certificado preenchido.", "ok");
           } catch (e) {
             setMeta("Erro ao carregar o template.", "error");
             showPlaceholder("Erro de rede ao carregar o template.");
@@ -263,7 +263,7 @@
 
           const res = await fetch("/api/certificado.png?evento=" + qe + "&email=" + qm + "&telefone=" + qt);
           if (res.status === 404) {
-            setMeta("Nenhum participante com este e-mail e telefone neste evento.", "error");
+            setMeta("Nenhum participante com este e-mail ou telefone neste evento.", "error");
             const q = encodeURIComponent(evName);
             const tr = await fetch("/api/template.png?evento=" + q);
             if (tr.ok) {
@@ -328,11 +328,11 @@
 
           const telefoneDigits = (telefoneRaw || "").replace(/\D/g, "");
           const emailOk = !!emailRaw && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw);
-          /* Só tenta gerar com telefone “completo” (evita pedidos com número pela metade). O servidor exige igualdade exata aos dígitos registados na inscrição. */
-          const telefoneOk = telefoneDigits.length >= 8 && telefoneDigits.length <= 15;
+          /* Evita pedido com telefone pela metade. */
+          const telefoneOk = !telefoneRaw || (telefoneDigits.length >= 8 && telefoneDigits.length <= 15);
 
           if (!emailRaw && !telefoneRaw) {
-            setMeta("Informe o e-mail e o telefone da inscrição para gerar o certificado.", "");
+            setMeta("Informe e-mail ou telefone da inscrição para gerar o certificado.", "");
             btnPdf.disabled = true;
             lastOkEmail = "";
             lastOkTelefone = "";
@@ -340,39 +340,16 @@
             return;
           }
 
-          if (!emailRaw) {
-            setMeta("Informe o e-mail da inscrição para gerar o certificado preenchido.", "");
-            btnPdf.disabled = true;
-            lastOkEmail = "";
-            lastOkTelefone = "";
-            revokePreviewUrl();
-            reloadTemplatePreview();
-            return;
-          }
-
-          if (!telefoneRaw) {
-            setMeta("Informe o telefone da inscrição para gerar o certificado preenchido.", "");
-            btnPdf.disabled = true;
-            lastOkEmail = "";
-            lastOkTelefone = "";
-            revokePreviewUrl();
-            reloadTemplatePreview();
-            return;
-          }
-
-          if (!emailOk) {
-            setMeta("Digite um e-mail válido.", "error");
+          if (!!emailRaw && !emailOk && !telefoneRaw) {
+            setMeta("Digite um e-mail válido ou informe o telefone da inscrição.", "error");
             btnPdf.disabled = true;
             lastOkEmail = "";
             lastOkTelefone = "";
             return;
           }
 
-          if (!telefoneOk) {
-            setMeta(
-              "Digite o telefone completo (todos os dígitos), como na inscrição — em geral 10 ou 11 com DDD.",
-              "error"
-            );
+          if (!!telefoneRaw && !telefoneOk && !emailOk) {
+            setMeta("Digite um telefone válido ou informe o e-mail da inscrição.", "error");
             btnPdf.disabled = true;
             lastOkEmail = "";
             lastOkTelefone = "";
@@ -399,7 +376,7 @@
         });
 
         btnPdf.addEventListener("click", function () {
-          if (!lastOkEmail || !lastOkTelefone || !selectedEvento()) return;
+          if ((!lastOkEmail && !lastOkTelefone) || !selectedEvento()) return;
           const qe = encodeURIComponent(selectedEvento());
           const qm = encodeURIComponent(lastOkEmail);
           const qt = encodeURIComponent(lastOkTelefone);
