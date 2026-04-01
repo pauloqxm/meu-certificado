@@ -27,7 +27,7 @@ from app.services.registro import (
     mensagem_se_telefone_nao_confere_bd,
     obter_ou_criar_codigo,
 )
-from app.services.sheets import find_event_meta, find_participant_by_email, list_eventos
+from app.services.sheets import find_event_meta, find_participant_by_email_or_telefone, list_eventos
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -93,7 +93,7 @@ def export_page() -> FileResponse:
 
 def _get_participante(email: str, telefone: str, evento: str):
     try:
-        return find_participant_by_email(email, telefone=telefone, evento=evento)
+        return find_participant_by_email_or_telefone(email=email, telefone=telefone, evento=evento)
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 
@@ -139,7 +139,7 @@ def api_participante(
     if not p:
         raise HTTPException(
             status_code=404,
-            detail="Participante não encontrado para este e-mail e telefone neste evento.",
+            detail="Participante não encontrado para este evento (e-mail ou telefone).",
         )
     return {
         "nome": p.get("nome"),
@@ -175,7 +175,7 @@ def api_certificado_png(
     if not p:
         raise HTTPException(
             status_code=404,
-            detail="Participante não encontrado para este e-mail e telefone neste evento.",
+            detail="Participante não encontrado para este evento (e-mail ou telefone).",
         )
     try:
         codigo = obter_ou_criar_codigo(p)
@@ -208,7 +208,7 @@ def api_certificado_pdf(
     if not p:
         raise HTTPException(
             status_code=404,
-            detail="Participante não encontrado para este e-mail e telefone neste evento.",
+            detail="Participante não encontrado para este evento (e-mail ou telefone).",
         )
     try:
         codigo = obter_ou_criar_codigo(p)

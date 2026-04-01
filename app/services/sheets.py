@@ -143,27 +143,41 @@ def list_eventos(csv_url: str = DEFAULT_SHEET_CSV_URL) -> list[dict[str, str]]:
     return sorted(seen.values(), key=lambda x: (x["evento"] or "").lower())
 
 
-def find_participant_by_email(
-    email: str,
+def find_participant_by_email_or_telefone(
+    email: str | None,
     telefone: str | None = None,
     evento: str | None = None,
     csv_url: str = DEFAULT_SHEET_CSV_URL,
 ) -> dict[str, str] | None:
-    target = _norm_email(email)
-    if not target:
+    """
+    Procura participante no evento quando pelo menos um identificador coincide:
+    - e-mail OU telefone (só dígitos).
+    Prioriza linha que coincide com ambos; se não houver, aceita uma coincidência.
+    """
+    target_email = _norm_email(email or "")
+    target_tel = normalize_telefone(telefone or "")
+    if not target_email and not target_tel:
         return None
+
     ev_key = normalize_evento(evento) if evento else None
+    best: dict[str, str] | None = None
+    best_score = 0
     for p in fetch_sheet_rows(csv_url):
-        if _norm_email(p.get("email", "")) != target:
+        if ev_key is not None and normalize_evento(p.get("evento", "")) != ev_key:
             continue
-        if ev_key is not None:
-            if normalize_evento(p.get("evento", "")) != ev_key:
-                continue
-        if telefone is not None:
-            if not telefone_digitos_iguais(telefone, p.get("telefone", "")):
-                continue
-        return p
-    return None
+
+        email_ok = bool(target_email) and _norm_email(p.get("email", "")) == target_email
+        tel_ok = bool(target_tel) and telefone_digitos_iguais(target_tel, p.get("telefone", ""))
+        if not email_ok and not tel_ok:
+            continue
+
+        score = int(email_ok) + int(tel_ok)
+        if score > best_score:
+            best = p
+            best_score = score
+            if best_score == 2:
+                break
+    return best
 
 
 def find_event_meta(evento: str, csv_url: str = DEFAULT_SHEET_CSV_URL) -> dict[str, str] | None:
